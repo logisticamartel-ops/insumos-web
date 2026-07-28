@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+  <!DOCTYPE html>
 <html lang="es-AR">
 <head>
 <meta charset="utf-8">
@@ -233,9 +233,45 @@ tr.pide .c-nom{font-weight:600}
   #tituloImp{display:block !important}
 }
 #tituloImp{display:none; padding:0 0 10px; font-size:14pt; font-weight:800}
+
+/* ---------- Candado de acceso ---------- */
+#gate{
+  display:none; position:fixed; inset:0; z-index:100; background:var(--tinta);
+  align-items:center; justify-content:center; padding:20px;
+}
+.gate-card{
+  width:100%; max-width:340px; background:#242830; border:1px solid #343a44;
+  border-radius:14px; padding:30px 24px; text-align:center;
+}
+.gate-lock{font-size:34px; margin-bottom:8px}
+.gate-tit{color:#fff; font-weight:800; font-size:17px; letter-spacing:.04em}
+.gate-sub{color:#9ca3af; font-size:13px; margin:6px 0 18px}
+#gateInp{
+  width:100%; padding:13px; font-size:16px; font-family:inherit; text-align:center;
+  border:1.5px solid #3f454e; border-radius:9px; background:#1a1d21; color:#fff;
+}
+#gateInp:focus{outline:0; border-color:var(--rojo)}
+.gate-err{color:#ff6b7a; font-size:12.5px; min-height:16px; margin:8px 0 0}
+.gate-btn{
+  width:100%; margin-top:12px; padding:13px; font-size:15px; font-weight:700;
+  font-family:inherit; color:#fff; background:var(--rojo); border:0; border-radius:9px; cursor:pointer;
+}
+.gate-btn:active{background:var(--rojo-osc)}
 </style>
 </head>
 <body>
+
+<!-- ============ CANDADO DE ACCESO ============ -->
+<div id="gate">
+  <form id="gateForm" class="gate-card">
+    <div class="gate-lock">🔒</div>
+    <div class="gate-tit">INSUMOS MARTEL</div>
+    <div class="gate-sub">Ingresá la clave para entrar.</div>
+    <input id="gateInp" type="password" autocomplete="current-password" placeholder="Clave" autofocus>
+    <div id="gateErr" class="gate-err"></div>
+    <button type="submit" class="gate-btn">Entrar</button>
+  </form>
+</div>
 
 <header>
   <div class="hd-top">
@@ -363,10 +399,57 @@ var E = null;      // {items:[{n,c,max,activo}], conteos:{mes:{insumo:actual}}, 
 var mesAct = "";
 var guardando = false, pendiente = false;
 
+/* ---------------- Clave de acceso ----------------
+   Una sola clave para entrar (como el "Acceso de gerencia" de combustible).
+   Se guarda ENCRIPTADA (hash SHA-256), no en texto plano: ni leyendo el código
+   público se ve la clave. Al entrar bien, queda recordado en el dispositivo.   */
+var CLAVE_HASH = "a0e16f1b5f56f8f1f5f0a889a18ad194489729be1e41ece0dd36063754355fed";
+var CLAVE_MARCA = "insumos_acceso_ok";
+
+async function sha256(txt){
+  var data = new TextEncoder().encode(txt);
+  var buf = await crypto.subtle.digest("SHA-256", data);
+  return Array.prototype.map.call(new Uint8Array(buf),
+    function(b){ return b.toString(16).padStart(2,"0"); }).join("");
+}
+
+function yaEntro(){
+  try{ return localStorage.getItem(CLAVE_MARCA) === "1"; }catch(e){ return false; }
+}
+
+function pedirClave(){
+  document.getElementById("gate").style.display = "flex";
+  var inp = document.getElementById("gateInp");
+  inp.focus();
+  document.getElementById("gateForm").onsubmit = async function(ev){
+    ev.preventDefault();
+    var err = document.getElementById("gateErr");
+    try{
+      var h = await sha256(inp.value.trim());
+      if(h === CLAVE_HASH){
+        try{ localStorage.setItem(CLAVE_MARCA, "1"); }catch(e){}
+        document.getElementById("gate").style.display = "none";
+        arrancarApp();
+      } else {
+        err.textContent = "Clave incorrecta.";
+        inp.value = ""; inp.focus();
+      }
+    }catch(e){
+      err.textContent = "No se pudo validar. Probá de nuevo.";
+    }
+  };
+}
+
 /* ---------------- Arranque ---------------- */
 init();
 
 function init(){
+  // En línea pide la clave una vez por dispositivo; suelto/local no molesta.
+  if(EN_LINEA && !yaEntro() && window.crypto && crypto.subtle) return pedirClave();
+  arrancarApp();
+}
+
+function arrancarApp(){
   try{ lugar = localStorage.getItem("insumos_lugar") || "deposito"; }catch(e){}
   if(!LUGARES.filter(function(l){ return l.id === lugar; }).length) lugar = "deposito";
   cargar();
