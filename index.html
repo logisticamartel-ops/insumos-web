@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Insumos Martel</title>
+<!-- Se instala como app (igual que dashboard-combustible): manifest + íconos Martel -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#E30613">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Insumos">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+:root{
+  --rojo:#E30613; --rojo-osc:#B8050F;
+  --tinta:#1a1d21; --gris:#6b7280; --linea:#e5e7eb;
+  --fondo:#f4f5f7; --papel:#ffffff;
+  --verde:#0F7A3D; --verde-suave:#e8f5ee;
+  --ambar:#b45309; --ambar-suave:#fef3e2;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  background:var(--fondo); color:var(--tinta); font-size:16px; line-height:1.4;
+  padding-bottom:88px;
+}
+
+/* ---------- Encabezado ---------- */
+header{
+  background:var(--tinta); color:#fff; padding:10px 14px;
+  position:sticky; top:0; z-index:30; box-shadow:0 1px 8px rgba(0,0,0,.18);
+}
+.hd-top{display:flex; align-items:center; gap:10px}
+.logo{
+  width:30px;height:30px;flex:0 0 30px;background:var(--rojo);border-radius:6px;
+  display:grid;place-items:center;font-weight:800;font-size:18px;color:#fff;letter-spacing:-1px;
+}
+.hd-tit{font-weight:700; font-size:15px; letter-spacing:.02em; flex:1; min-width:0}
+.hd-tit small{display:block;font-weight:400;font-size:11.5px;color:#9ca3af;letter-spacing:.04em}
+#selMes,#selLugar{
+  background:#2b3038;color:#fff;border:1px solid #3f454e;border-radius:7px;
+  padding:7px 9px;font-size:14px;font-weight:600;font-family:inherit;
+}
+.tabs{display:flex; gap:4px; margin-top:10px}
+.tab{
+  flex:1; padding:8px 6px; text-align:center; font-size:13px; font-weight:600;
+  color:#9ca3af; background:#242830; border:0; border-radius:7px 7px 0 0;
+  font-family:inherit; cursor:pointer; letter-spacing:.03em;
+}
+.tab.on{background:var(--fondo); color:var(--tinta)}
+
+/* ---------- Avisos ---------- */
+.aviso{
+  padding:8px 14px; font-size:12.5px; display:flex; gap:8px; align-items:center;
+  background:var(--ambar-suave); color:var(--ambar); border-bottom:1px solid #f5d9ae;
+}
+.aviso b{font-weight:700}
+.aviso button{
+  margin-left:auto; background:transparent; border:1px solid currentColor; color:inherit;
+  border-radius:5px; padding:3px 8px; font-size:11.5px; font-family:inherit; cursor:pointer; white-space:nowrap;
+}
+
+/* ---------- Contenido ---------- */
+main{padding:12px 10px 0}
+.vista{display:none}
+.vista.on{display:block}
+
+.cat{margin-bottom:14px; background:var(--papel); border-radius:10px; overflow:hidden;
+     box-shadow:0 1px 3px rgba(16,24,40,.07)}
+.cat-hd{
+  display:flex; align-items:center; padding:9px 12px; background:#fafafa;
+  border-bottom:1px solid var(--linea);
+}
+.cat-hd h2{margin:0; font-size:12.5px; font-weight:800; letter-spacing:.09em; color:var(--rojo)}
+.cat-hd span{margin-left:auto; font-size:11.5px; color:var(--gris)}
+
+table{width:100%; border-collapse:collapse}
+thead th{
+  font-size:10.5px; font-weight:700; letter-spacing:.07em; color:var(--gris);
+  text-transform:uppercase; padding:6px 8px; border-bottom:1px solid var(--linea);
+  text-align:center; background:#fff;
+}
+thead th:first-child{text-align:left}
+tbody td{padding:5px 8px; border-bottom:1px solid #f1f2f4; vertical-align:middle}
+tbody tr:last-child td{border-bottom:0}
+.c-nom{font-size:13.5px; line-height:1.25}
+.c-num{text-align:center; width:62px}
+.c-ped{text-align:center; width:60px}
+
+/* PEDIDO: sale de la cuenta pero se puede pisar a mano */
+.ped{
+  width:100%; padding:7px 2px; text-align:center; font-size:17px; font-weight:800;
+  font-family:inherit; color:#c5cad1; border:1.5px solid transparent; border-radius:8px;
+  background:transparent; appearance:textfield; -moz-appearance:textfield;
+}
+.ped::-webkit-outer-spin-button,.ped::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.ped:focus{outline:0; border-color:var(--rojo); background:#fff; color:var(--tinta)}
+tr.pide .ped{color:var(--verde)}
+.ped.man{
+  color:var(--ambar) !important; background:var(--ambar-suave);
+  border-color:#f5d9ae; border-style:dashed;
+}
+
+/* fila apagada / activa */
+tr.cero .c-nom{color:#9ca3af}
+tr.cero .c-ped{color:#d1d5db}
+tr.pide{background:var(--verde-suave)}
+tr.pide .c-ped{color:var(--verde)}
+tr.pide .c-nom{font-weight:600}
+
+/* inputs */
+.inp{
+  width:100%; padding:8px 2px; text-align:center; font-size:17px; font-weight:600;
+  font-family:inherit; color:var(--tinta); border:1.5px solid var(--linea);
+  border-radius:8px; background:#fff; appearance:textfield; -moz-appearance:textfield;
+}
+.inp::-webkit-outer-spin-button,.inp::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.inp:focus{outline:0; border-color:var(--rojo); box-shadow:0 0 0 3px rgba(227,6,19,.12)}
+.inp.vacio{background:#fcfcfd; color:#9ca3af}
+.max{
+  width:100%; padding:6px 2px; text-align:center; font-size:14px; font-family:inherit;
+  color:var(--gris); border:1px dashed transparent; border-radius:6px; background:transparent;
+}
+.max:hover{border-color:var(--linea)}
+.max:focus{outline:0; border:1.5px solid var(--rojo); color:var(--tinta); background:#fff}
+
+.x{
+  border:0; background:transparent; color:#d1d5db; font-size:17px; cursor:pointer;
+  padding:0 2px; line-height:1; width:22px;
+}
+.x:hover{color:var(--rojo)}
+
+/* ---------- Pie fijo ---------- */
+.pie{
+  position:fixed; bottom:0; left:0; right:0; z-index:30; background:var(--papel);
+  border-top:1px solid var(--linea); padding:10px 12px;
+  display:flex; align-items:center; gap:12px; box-shadow:0 -2px 12px rgba(16,24,40,.09);
+}
+.pie-tot{font-size:12px; color:var(--gris); line-height:1.25; flex:1}
+.pie-tot b{display:block; font-size:19px; color:var(--tinta); font-weight:800}
+.btn{
+  background:var(--rojo); color:#fff; border:0; border-radius:9px; padding:12px 18px;
+  font-size:15px; font-weight:700; font-family:inherit; cursor:pointer; letter-spacing:.01em;
+}
+.btn:active{background:var(--rojo-osc)}
+.btn[disabled]{background:#d1d5db; cursor:default}
+.btn2{
+  background:#fff; color:var(--tinta); border:1.5px solid var(--linea); border-radius:8px;
+  padding:9px 14px; font-size:13.5px; font-weight:600; font-family:inherit; cursor:pointer;
+}
+.btn2:active{background:#f4f5f7}
+.btn2.peligro{color:var(--rojo); border-color:#f3c9d1}
+.btn2.peligro:active{background:#fde8ec}
+
+.acciones{display:flex; gap:8px; flex-wrap:wrap; margin:0 0 20px}
+
+/* ---------- Historial ---------- */
+.h-intro{
+  background:var(--papel); border-radius:10px; padding:12px 14px; margin-bottom:12px;
+  font-size:13px; color:var(--gris); box-shadow:0 1px 3px rgba(16,24,40,.07);
+}
+.h-intro b{color:var(--tinta)}
+.cmp-bocas{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px}
+.chip{font-size:11.5px; padding:3px 9px; border-radius:20px; white-space:nowrap}
+.chip.si{background:var(--verde-suave); color:var(--verde)}
+.chip.no{background:#f4f5f7; color:#9ca3af}
+.hist-t{width:100%; background:var(--papel); border-radius:10px; overflow:hidden;
+        box-shadow:0 1px 3px rgba(16,24,40,.07)}
+.hist-t td{font-size:13px}
+.barras{display:flex; align-items:flex-end; gap:2px; height:26px}
+.barra{flex:1; min-width:3px; background:#dbe0e6; border-radius:1px 1px 0 0}
+.barra.b0{background:var(--rojo); height:3px !important}
+.pill{
+  display:inline-block; padding:2px 7px; border-radius:20px; font-size:11px; font-weight:700;
+  white-space:nowrap;
+}
+.pill.mal{background:#fde8ec; color:var(--rojo)}
+.pill.reg{background:var(--ambar-suave); color:var(--ambar)}
+.pill.ok{background:var(--verde-suave); color:var(--verde)}
+
+/* ---------- Modal ---------- */
+.velo{
+  position:fixed; inset:0; background:rgba(15,18,22,.55); z-index:50;
+  display:none; align-items:flex-end; justify-content:center;
+}
+.velo.on{display:flex}
+.modal{
+  background:var(--papel); width:100%; max-width:560px; border-radius:14px 14px 0 0;
+  padding:16px; max-height:92vh; overflow:auto;
+}
+.modal h3{margin:0 0 4px; font-size:16px}
+.modal p{margin:0 0 12px; font-size:12.5px; color:var(--gris)}
+.modal textarea{
+  width:100%; height:150px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:12.5px; line-height:1.5; padding:10px; border:1px solid var(--linea);
+  border-radius:8px; resize:vertical; color:var(--tinta); background:#fafafa;
+}
+.prov{margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid var(--linea)}
+.prov .btn,.prov .btn2{margin-top:8px}
+.prov-hd{display:flex; align-items:baseline; gap:8px; margin-bottom:6px; font-size:14px}
+.prov-hd b{color:var(--rojo)}
+.prov-hd span{margin-left:auto; font-size:11px; color:var(--gris);
+  background:#f4f5f7; padding:2px 8px; border-radius:20px}
+.modal details.prov summary{cursor:pointer; font-size:13px; color:var(--azul,#1F4E79); margin-bottom:6px}
+.modal details.prov[open] summary{margin-bottom:10px}
+.modal-f{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap}
+.campo{margin-bottom:10px}
+.campo label{display:block; font-size:11.5px; font-weight:700; color:var(--gris);
+             letter-spacing:.05em; text-transform:uppercase; margin-bottom:4px}
+.campo input,.campo select{
+  width:100%; padding:10px; font-size:15px; font-family:inherit; border:1.5px solid var(--linea);
+  border-radius:8px; background:#fff; color:var(--tinta);
+}
+.campo input:focus,.campo select:focus{outline:0;border-color:var(--rojo)}
+
+@media (min-width:640px){
+  body{font-size:15px}
+  main{max-width:860px; margin:0 auto; padding:16px 16px 0}
+  header .hd-tit{font-size:16px}
+  .c-num{width:76px} .c-ped{width:70px}
+}
+
+@media print{
+  header,.pie,.tabs,.acciones,.aviso,.x,#vHist{display:none !important}
+  body{background:#fff; padding:0; font-size:11pt}
+  .cat{box-shadow:none; border:1px solid #999; page-break-inside:avoid; margin-bottom:10px}
+  .inp,.max,.ped{border:0; background:transparent; font-size:11pt}
+  tr.cero{display:none}
+  #tituloImp{display:block !important}
+}
+#tituloImp{display:none; padding:0 0 10px; font-size:14pt; font-weight:800}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hd-top">
+    <div class="logo">M</div>
+    <div class="hd-tit">INSUMOS<small id="subTit">—</small></div>
+    <select id="selLugar" aria-label="Lugar"></select>
+    <select id="selMes" aria-label="Mes"></select>
+  </div>
+  <div class="tabs">
+    <button class="tab on" data-v="ped">PEDIDO</button>
+    <button class="tab" data-v="hist">HISTORIAL</button>
+    <button class="tab" data-v="compras" id="tabCompras" style="display:none">COMPRAS</button>
+  </div>
+</header>
+
+<div class="aviso" id="avisoLocal" style="display:none">
+  <span><b>Modo local:</b> se guarda solo en este dispositivo.</span>
+</div>
+
+<main>
+  <div id="tituloImp"></div>
+
+  <!-- ============ PEDIDO ============ -->
+  <section class="vista on" id="vPed">
+    <div id="cats"></div>
+    <div class="acciones">
+      <button class="btn2" onclick="abrirNuevo()">+ Agregar insumo</button>
+      <button class="btn2" onclick="nuevoMes()">+ Nuevo mes</button>
+      <button class="btn2" onclick="vaciarMes()">Empezar de nuevo</button>
+      <button class="btn2 peligro" onclick="borrarMes()">Borrar este mes</button>
+      <button class="btn2" id="btnBajas" onclick="verBajas()"></button>
+    </div>
+  </section>
+
+  <!-- ============ HISTORIAL ============ -->
+  <section class="vista" id="vHist">
+    <div class="h-intro">
+      Cuántas veces cada insumo <b>quedó en cero</b> al momento del conteo, sobre los meses medidos.
+      Si un insumo llega a cero seguido, <b>el máximo está corto</b>. Cada barra es un mes; las rojas
+      son los meses en cero.
+    </div>
+    <table class="hist-t">
+      <thead><tr>
+        <th>Insumo</th><th style="width:34%">Mes a mes</th>
+        <th style="width:58px">Máx.</th><th style="width:82px">En cero</th>
+      </tr></thead>
+      <tbody id="histBody"></tbody>
+    </table>
+    <div style="height:24px"></div>
+  </section>
+
+  <!-- ============ COMPRAS (consolidado, para Administración) ============ -->
+  <section class="vista" id="vCompras">
+    <div class="h-intro" id="comprasIntro">
+      Lo que piden <b>todas las bocas juntas</b>, sumado por insumo y agrupado por proveedor.
+      Es la lista con la que Administración compra. Tocá <b>Copiar</b> en cada proveedor.
+    </div>
+    <div id="comprasBody"></div>
+    <div style="height:24px"></div>
+  </section>
+</main>
+
+<div class="pie" id="pie">
+  <div class="pie-tot"><b id="totItems">0</b><span id="totDet">ítems a pedir</span>
+    <span id="guardado" style="display:block;font-size:10.5px;color:#9ca3af"></span></div>
+  <button class="btn" id="btnListo" onclick="abrirSalida()">Pedido listo</button>
+</div>
+
+<!-- ============ MODALES ============ -->
+<div class="velo" id="velo" onclick="if(event.target===this)cerrar()">
+  <div class="modal" id="modal"></div>
+</div>
+
+<script>
+/* =======================================================================
+   INSUMOS MARTEL
+   Lógica: PEDIDO = MÁXIMO − ACTUAL.  El máximo lo define Héctor.
+
+   EN LÍNEA, como los otros dashboards de Martel (combustible, reposición):
+   está en Cloudflare Pages (HTTPS, URL corta, se abre de cualquier lado y se
+   instala como app) y los datos van a Google Sheets vía Apps Script.
+   No hay login, no hay que estar en la red interna.
+
+   Para conectar el backend: pegá la URL del Apps Script en APPS_SCRIPT_URL
+   (abajo). Sin URL, la app anda igual pero guarda solo en este dispositivo.
+   Mismo patrón exacto que dashboard-combustible.
+   ======================================================================= */
+
+/* ---- Backend: pegar acá la URL del Apps Script (termina en /exec) ---- */
+var APPS_SCRIPT_URL = "";
+var EN_LINEA = /^https?:/.test(APPS_SCRIPT_URL);
+
+/* Los 8 lugares que hacen su propio pedido. Cada uno tiene SU lista, SUS máximos
+   y SU historial: son estados separados. El id (lugar) es la clave con la que
+   se guarda y se lee en la planilla — así no se cruzan.                        */
+var LUGARES = [
+  {id:"deposito",     n:"Depósito"},
+  {id:"malvinas",     n:"Malvinas"},
+  {id:"rioja",        n:"Rioja"},
+  {id:"chile",        n:"Chile"},
+  {id:"arenales",     n:"Arenales"},
+  {id:"balcarce",     n:"Balcarce"},
+  {id:"trescerritos", n:"Tres Cerritos"},
+  {id:"administracion", n:"Administración"}
+];
+var lugar = "deposito";                                  // el que se está viendo
+
+function nomLugar(id){
+  var l = LUGARES.filter(function(x){ return x.id === id; })[0];
+  return l ? l.n : id;
+}
+function claveEstado(){ return "insumos-" + lugar; }     // clave por lugar en la planilla
+function claveLocal(){ return "insumos_martel_" + lugar; }
+
+/* ---- Precarga: 17 meses del .ods (abr-2025 a ago-2026) ---- */
+var PRECARGA = {"meses":["2025-04","2025-05","2025-06","2025-07","2025-08","2025-09","2025-10","2025-11","2025-12","2026-01","2026-02","2026-03","2026-04","2026-05","2026-06","2026-07","2026-08"],"items":[{"n":"AZUCAR X 1KG","c":"CAFETERIA","max":8.0},{"n":"CAFE","c":"CAFETERIA","max":5.0},{"n":"MATE COCIDO","c":"CAFETERIA","max":1.0},{"n":"ROLLO DE PAPEL GRANDE PARA COCINA","c":"CAFETERIA","max":4.0},{"n":"TE","c":"CAFETERIA","max":1.0},{"n":"BROCHES 21/100","c":"LIBRERIA","max":1.0},{"n":"BROCHES 50 X 1000","c":"LIBRERIA","max":2.0},{"n":"CORRECTOR","c":"LIBRERIA","max":2.0},{"n":"LAPICERA AZUL","c":"LIBRERIA","max":3.0},{"n":"LAPICERA COMUN AZUL TRAZO GRUESO","c":"LIBRERIA","max":3.0},{"n":"LAPICERA ROJA","c":"LIBRERIA","max":3.0},{"n":"MARCADOR FLUOR","c":"LIBRERIA","max":2.0},{"n":"MARCADOR PARA PIZARRON NEGRO","c":"LIBRERIA","max":2.0},{"n":"MARCADOR PERMANENTE","c":"LIBRERIA","max":3.0},{"n":"TINTA RECARGABLE MARCADOR PERM.","c":"LIBRERIA","max":1.0},{"n":"TINTA RECARGABLE PARA PIZARRON","c":"LIBRERIA","max":1.0},{"n":"BLEM LUSTRA MUEBLES","c":"LIMPIEZA","max":2.0},{"n":"BOLSAS DE RESIDUOS CHICAS TACHO X 20 LTS","c":"LIMPIEZA","max":24.0},{"n":"BOLSAS DE RESIDUOS GRANDE","c":"LIMPIEZA","max":6.0},{"n":"CIF CREMA X 500","c":"LIMPIEZA","max":1.0},{"n":"DESODORANTE DE AMBIENTE AEROSOL","c":"LIMPIEZA","max":3.0},{"n":"DESODORANTE PARA CUCARACHAS","c":"LIMPIEZA","max":1.0},{"n":"DESODORANTE PARA PISO X 5 LTS","c":"LIMPIEZA","max":1.0},{"n":"DETERGENTE X 5 LTS","c":"LIMPIEZA","max":1.0},{"n":"ESCOBILLON CON PALO","c":"LIMPIEZA","max":0.0},{"n":"ESPONJA","c":"LIMPIEZA","max":1.0},{"n":"JABON LIQUIDO PARA MANOS X 5LTS","c":"LIMPIEZA","max":1.0},{"n":"LAVANDINA","c":"LIMPIEZA","max":1.0},{"n":"PALA","c":"LIMPIEZA","max":0.0},{"n":"PAPEL HIGIENICO X 80 X 4 UN","c":"LIMPIEZA","max":10.0},{"n":"PAÑO PARA LUSTRA MUEBLE","c":"LIMPIEZA","max":1.0},{"n":"POMADA (BOTINES)","c":"LIMPIEZA","max":1.0},{"n":"REJILLA AMARILLA","c":"LIMPIEZA","max":2.0},{"n":"ROLLO DE BOLSAS PLASTICAS X 1KG","c":"LIMPIEZA","max":2.0},{"n":"ROLLO DE BOLSAS PLASTICAS X 2KG","c":"LIMPIEZA","max":2.0},{"n":"ROLLO DE BOLSAS PLASTICAS X 5KG","c":"LIMPIEZA","max":2.0},{"n":"TRAPO PARA PISOS","c":"LIMPIEZA","max":4.0}],"hist":{"AZUCAR X 1KG":{"2025-04":[6.0,2.0,4],"2025-05":[6.0,0.0,6],"2025-06":[6.0,0.0,6],"2025-07":[8.0,0.0,8],"2025-08":[8.0,0.0,8],"2025-09":[8.0,0.0,8],"2025-10":[8.0,0.0,8],"2025-11":[8.0,0.0,8],"2025-12":[8.0,1.0,7],"2026-01":[8.0,0.0,8],"2026-02":[8.0,1.0,7],"2026-03":[8.0,2.0,6],"2026-04":[8.0,0.0,8],"2026-05":[8.0,2.0,6],"2026-06":[8.0,0.0,8],"2026-07":[8.0,1.0,7],"2026-08":[8.0,0.0,8]},"CAFE":{"2025-04":[5.0,1.0,4],"2025-05":[4.0,2.0,2],"2025-06":[5.0,0.0,5],"2025-07":[5.0,0.0,5],"2025-08":[5.0,0.0,5],"2025-09":[5.0,0.0,5],"2025-10":[5.0,0.0,5],"2025-11":[5.0,0.0,5],"2025-12":[5.0,1.0,4],"2026-01":[5.0,0.0,5],"2026-02":[5.0,1.0,4],"2026-03":[5.0,2.0,3],"2026-04":[5.0,1.0,4],"2026-05":[5.0,0.0,5],"2026-06":[5.0,0.0,5],"2026-07":[5.0,1.0,4],"2026-08":[5.0,0.0,5]},"MATE COCIDO":{"2025-04":[1.0,1.0,0],"2025-05":[1.0,0.0,1],"2025-06":[1.0,1.0,0],"2025-07":[1.0,0.0,1],"2025-08":[1.0,1.0,0],"2025-09":[1.0,0.0,1],"2025-10":[1.0,1.0,0],"2025-11":[1.0,0.0,1],"2025-12":[1.0,1.0,0],"2026-01":[1.0,0.0,1],"2026-02":[1.0,0.0,1],"2026-03":[1.0,1.0,0],"2026-04":[1.0,0.0,1],"2026-05":[1.0,0.0,1],"2026-06":[1.0,0.0,1],"2026-07":[1.0,0.0,1],"2026-08":[1.0,0.0,1]},"ROLLO DE PAPEL GRANDE PARA COCINA":{"2025-04":[2.0,0.0,2],"2025-05":[2.0,0.0,2],"2025-06":[2.0,0.0,2],"2025-07":[2.0,2.0,0],"2025-08":[4.0,2.0,2],"2025-09":[4.0,1.0,3],"2025-10":[4.0,0.0,4],"2025-11":[4.0,3.0,1],"2025-12":[4.0,2.0,2],"2026-01":[4.0,4.0,0],"2026-02":[4.0,0.0,0],"2026-03":[4.0,0.0,4],"2026-04":[4.0,3.0,1],"2026-05":[4.0,3.0,1],"2026-06":[4.0,2.0,2],"2026-07":[4.0,4.0,0],"2026-08":[4.0,2.0,2]},"TE":{"2025-04":[1.0,1.0,0],"2025-05":[1.0,1.0,0],"2025-06":[1.0,1.0,0],"2025-07":[1.0,0.0,1],"2025-08":[1.0,1.0,0],"2025-09":[1.0,0.0,1],"2025-10":[1.0,1.0,0],"2025-11":[1.0,0.0,1],"2025-12":[1.0,1.0,0],"2026-01":[1.0,0.0,1],"2026-02":[1.0,0.0,1],"2026-03":[1.0,1.0,0],"2026-04":[1.0,0.0,1],"2026-05":[1.0,0.0,1],"2026-06":[1.0,1.0,0],"2026-07":[1.0,0.0,1],"2026-08":[1.0,1.0,0]},"BROCHES 21/100":{"2025-04":[1.0,1.0,0],"2025-05":[1.0,1.0,0],"2025-06":[1.0,1.0,0],"2025-07":[1.0,1.0,0],"2025-08":[1.0,1.0,0],"2025-09":[1.0,1.0,0],"2025-10":[1.0,1.0,0],"2025-11":[1.0,1.0,0],"2025-12":[1.0,1.0,0],"2026-01":[1.0,0.0,1],"2026-02":[1.0,1.0,0],"2026-03":[1.0,1.0,0],"2026-04":[1.0,1.0,0],"2026-05":[1.0,0.0,1],"2026-06":[1.0,1.0,0],"2026-07":[1.0,1.0,0],"2026-08":[1.0,1.0,0]},"BROCHES 50 X 1000":{"2025-04":[1.0,1.0,0],"2025-05":[1.0,1.0,0],"2025-06":[1.0,1.0,0],"2025-07":[1.0,1.0,0],"2025-08":[1.0,0.0,1],"2025-09":[1.0,0.0,1],"2025-10":[1.0,1.0,0],"2025-11":[1.0,0.0,1],"2025-12":[1.0,0.0,1],"2026-01":[1.0,1.0,0],"2026-02":[2.0,1.0,1],"2026-03":[2.0,2.0,0],"2026-04":[2.0,0.0,2],"2026-05":[2.0,1.0,1],"2026-06":[2.0,2.0,0],"2026-07":[2.0,1.0,1],"2026-08":[2.0,2.0,0]},"CORRECTOR":{"2025-04":[2.0,2.0,0],"2025-05":[2.0,2.0,0],"2025-06":[2.0,2.0,0],"2025-07":[2.0,2.0,0],"2025-08":[2.0,2.0,0],"2025-09":[2.0,2.0,0],"2025-10":[2.0,2.0,0],"2025-11":[2.0,2.0,0],"2025-12":[2.0,2.0,0],"2026-01":[2.0,0.0,2],"2026-02":[2.0,1.0,1],"2026-03":[2.0,2.0,0],"2026-04":[2.0,2.0,0],"2026-05":[2.0,1.0,1],"2026-06":[2.0,2.0,0],"2026-07":[2.0,2.0,0],"2026-08":[2.0,1.0,1]},"LAPICERA AZUL":{"2025-04":[3.0,1.0,2],"2025-05":[3.0,2.0,1],"2025-06":[3.0,1.0,2],"2025-07":[3.0,2.0,1],"2025-08":[3.0,2.0,1],"2025-09":[3.0,2.0,1],"2025-10":[3.0,3.0,0],"2025-11":[3.0,0.0,3],"2025-12":[3.0,1.0,2],"2026-01":[3.0,3.0,0],"2026-02":[3.0,1.0,2],"2026-03":[3.0,1.0,2],"2026-04":[3.0,3.0,0],"2026-05":[3.0,2.0,1],"2026-06":[3.0,1.0,2],"2026-07":[3.0,0.0,3],"2026-08":[3.0,0.0,3]},"LAPICERA COMUN AZUL TRAZO GRUESO":{"2025-04":[3.0,1.0,2],"2025-05":[3.0,0.0,3],"2025-06":[3.0,0.0,3],"2025-07":[3.0,0.0,3],"2025-08":[3.0,2.0,1],"2025-09":[3.0,2.0,1],"2025-10":[3.0,1.0,2],"2025-11":[3.0,0.0,3],"2025-12":[3.0,3.0,0],"2026-01":[3.0,0.0,3],"2026-02":[3.0,1.0,2],"2026-03":[3.0,0.0,3],"2026-04":[3.0,2.0,1],"2026-05":[3.0,0.0,3],"2026-06":[3.0,1.0,2],"2026-07":[3.0,3.0,0],"2026-08":[3.0,0.0,3]},"LAPICERA ROJA":{"2025-04":[3.0,2.0,1],"2025-05":[3.0,3.0,0],"2025-06":[3.0,2.0,1],"2025-07":[3.0,2.0,1],"2025-08":[3.0,2.0,1],"2025-09":[3.0,2.0,1],"2025-10":[3.0,3.0,0],"2025-11":[3.0,0.0,3],"2025-12":[3.0,2.0,1],"2026-01":[3.0,1.0,2],"2026-02":[3.0,2.0,1],"2026-03":[3.0,2.0,1],"2026-04":[3.0,1.0,2],"2026-05":[3.0,2.0,1],"2026-06":[3.0,2.0,1],"2026-07":[3.0,3.0,0],"2026-08":[3.0,1.0,2]},"MARCADOR FLUOR":{"2025-04":[2.0,2.0,0],"2025-05":[2.0,2.0,0],"2025-06":[2.0,2.0,0],"2025-07":[2.0,2.0,0],"2025-08":[2.0,2.0,0],"2025-09":[2.0,2.0,0],"2025-10":[2.0,2.0,0],"2025-11":[2.0,2.0,0],"2025-12":[2.0,2.0,0],"2026-01":[2.0,2.0,0],"2026-02":[2.0,1.0,1],"2026-03":[2.0,1.0,1],"2026-04":[2.0,1.0,1],"2026-05":[2.0,1.0,1],"2026-06":[2.0,1.0,1],"2026-07":[2.0,2.0,0],"2026-08":[2.0,1.0,1]},"MARCADOR PARA PIZARRON NEGRO":{"2025-04":[2.0,2.0,0],"2025-05":[2.0,2.0,0],"2025-06":[2.0,2.0,0],"2025-07":[2.0,1.0,1],"2025-08":[2.0,1.0,1],"2025-09":[2.0,1.0,1],"2025-10":[2.0,1.0,1],"2025-11":[2.0,2.0,0],"2025-12":[2.0,2.0,0],"2026-01":[2.0,1.0,1],"2026-02":[2.0,2.0,0],"2026-03":[2.0,2.0,0],"2026-04":[2.0,1.0,1],"2026-05":[2.0,2.0,0],"2026-06":[2.0,2.0,0],"2026-07":[2.0,2.0,0],"2026-08":[2.0,2.0,0]},"MARCADOR PERMANENTE":{"2025-04":[3.0,3.0,0],"2025-05":[3.0,0.0,3],"2025-06":[3.0,2.0,1],"2025-07":[3.0,3.0,0],"2025-08":[3.0,0.0,3],"2025-09":[3.0,3.0,0],"2025-10":[3.0,1.0,2],"2025-11":[3.0,0.0,3],"2025-12":[3.0,1.0,2],"2026-01":[3.0,1.0,2],"2026-02":[3.0,2.0,1],"2026-03":[3.0,1.0,2],"2026-04":[3.0,1.0,2],"2026-05":[3.0,3.0,0],"2026-06":[3.0,0.0,3],"2026-07":[3.0,3.0,0],"2026-08":[3.0,2.0,1]},"TINTA RECARGABLE MARCADOR PERM.":{"2025-05":[1.0,0.0,1],"2025-06":[1.0,1.0,0],"2025-07":[1.0,0.0,1],"2025-08":[1.0,1.0,0],"2025-09":[1.0,1.0,0],"2025-10":[1.0,1.0,0],"2025-11":[1.0,1.0,0],"2025-12":[1.0,1.0,0],"2026-01":[1.0,1.0,0],"2026-02":[1.0,1.0,0],"2026-03":[1.0,1.0,0],"2026-04":[1.0,0.0,1],"2026-05":[1.0,1.0,0],"2026-06":[1.0,0.0,1],"2026-07":[1.0,1.0,0],"2026-08":[1.0,1.0,0]},"TINTA RECARGABLE PARA PIZARRON":{"2025-04":[1.0,1.0,0],"2025-05":[1.0,1.0,0],"2025-06":[1.0,1.0,0],"2025-07":[1.0,1.0,0],"2025-08":[1.0,1.0,0],"2025-09":[1.0,1.0,0],"2025-10":[1.0,1.0,0],"2025-11":[1.0,1.0,0],"2025-12":[1.0,1.0,0],"2026-01":[1.0,1.0,0],"2026-02":[1.0,1.0,0],"2026-03":[1.0,1.0,0],"2026-04":[1.0,1.0,0],"2026-05":[1.0,1.0,0],"2026-06":[1.0,1.0,0],"2026-07":[1.0,1.0,0],"2026-08":[1.0,1.0,0]},"BLEM LUSTRA MUEBLES":{"2025-04":[2.0,2.0,0],"2025-05":[2.0,1.0,1],"2025-06":[2.0,1.0,1],"2025-07":[2.0,1.0,1],"2025-08":[2.0,2.0,0],"2025-09":[2.0,2.0,0],"2025-10":[2.0,2.0,0],"2025-11":[2.0,1.0,1],"2025-12":[2.0,1.0,1],"2026-01":[2.0,2.0,0],"2026-02":[2.0,2.0,0],"2026-03":[2.0,2.0,0],"2026-04":[2.0,1.0,1],"2026-05":[2.0,2.0,0],"2026-06":[2.0,1.0,1],"2026-07":[2.0,2.0,0],"2026-08":[2.0,2.0,0]},"BOLSAS DE RESIDUOS CHICAS TACHO X 20 LTS":{"2025-04":[24.0,0.0,24],"2025-05":[24.0,24.0,0],"2025-06":[24.0,19.0,5],"2025-07":[24.0,0.0,24],"2025-08":[24.0,24.0,0],"2025-09":[24.0,10.0,14],"2025-10":[24.0,24.0,0],"2025-11":[24.0,24.0,0],"2025-12":[24.0,24.0,0],"2026-01":[24.0,10.0,14],"2026-02":[24.0,24.0,0],"2026-03":[24.0,6.0,18],"2026-04":[24.0,9.0,15],"2026-05":[24.0,24.0,0],"2026-06":[24.0,15.0,9],"2026-07":[24.0,24.0,0],"2026-08":[24.0,24.0,0]},"BOLSAS DE RESIDUOS GRANDE":{"2025-04":[6.0,6.0,0],"2025-05":[6.0,6.0,0],"2025-06":[6.0,6.0,0],"2025-07":[6.0,6.0,0],"2025-08":[6.0,6.0,0],"2025-09":[6.0,3.0,3],"2025-10":[6.0,6.0,0],"2025-11":[6.0,3.0,3],"2025-12":[6.0,6.0,0],"2026-01":[6.0,6.0,0],"2026-02":[6.0,2.0,4],"2026-03":[6.0,5.0,1],"2026-04":[6.0,2.0,4],"2026-05":[6.0,3.0,3],"2026-06":[6.0,0.0,6],"2026-07":[6.0,6.0,0],"2026-08":[6.0,6.0,0]},"CIF CREMA X 500":{"2025-04":[1.0,1.0,0],"2025-05":[1.0,1.0,0],"2025-06":[1.0,1.0,0],"2025-07":[1.0,1.0,0],"2025-08":[1.0,1.0,0],"2025-09":[1.0,0.0,1],"2025-10":[1.0,1.0,0],"2025-11":[1.0,1.0,0],"2025-12":[1.0,1.0,0],"2026-01":[1.0,1.0,0],"2026-02":[1.0,1.0,0],"2026-03":[1.0,1.0,0],"2026-04":[1.0,1.0,0],"2026-05":[1.0,1.0,0],"2026-06":[1.0,1.0,0],"2026-07":[1.0,1.0,0],"2026-08":[1.0,1.0,0]},"DESODORANTE DE AMBIENTE AEROSOL":{"2025-04":[3.0,3.0,0],"2025-05":[3.0,1.0,2],"2025-06":[3.0,2.0,1],"2025-07":[3.0,1.0,2],"2025-08":[3.0,1.0,2],"2025-09":[3.0,1.0,2],"2025-10":[3.0,2.0,1],"2025-11":[3.0,1.0,2],"2025-12":[3.0,1.0,2],"2026-01":[3.0,1.0,2],"2026-02":[3.0,2.0,1],"2026-03":[3.0,0.0,3],"2026-04":[3.0,2.0,1],"2026-05":[3.0,3.0,0],"2026-06":[3.0,1.0,2],"2026-07":[3.0,2.0,1],"2026-08":[3.0,0.0,3]},"DESODORANTE PARA CUCARACHAS":{"2026-04":[1.0,0.0,1],"2026-05":[1.0,1.0,0],"2026-06":[1.0,1.0,0],"2026-07":[1.0,1.0,0],"2026-08":[1.0,1.0,0]},"DESODORANTE PARA PISO X 5 LTS":{"2025-04":[1.0,0.0,1],"2025-05":[1.0,0.0,1],"2025-06":[1.0,0.0,1],"2025-07":[1.0,0.0,1],"2025-08":[1.0,0.0,1],"2025-09":[1.0,0.0,1],"2025-10":[1.0,0.0,1],"2025-11":[1.0,0.0,1],"2025-12":[1.0,0.0,1],"2026-01":[1.0,0.0,1],"2026-02":[1.0,0.0,1],"2026-03":[1.0,0.0,1],"2026-04":[1.0,1.0,0],"2026-05":[1.0,1.0,0],"2026-06":[1.0,0.0,1],"2026-07":[1.0,0.0,1],"2026-08":[1.0,1.0,0]},"DETERGENTE X 5 LTS":{"2025-04":[1.0,1.0,0],"2025-05":[1.0,1.0,0],"2025-06":[1.0,1.0,0],"2025-07":[1.0,1.0,0],"2025-08":[1.0,1.0,0],"2025-09":[1.0,1.0,0],"2025-10":[1.0,0.0,1],"2025-11":[1.0,1.0,0],"2025-12":[1.0,1.0,0],"2026-01":[1.0,0.0,1],"2026-02":[1.0,1.0,0],"2026-03":[1.0,0.0,1],"2026-04":[1.0,1.0,0],"2026-05":[1.0,1.0,0],"2026-06":[1.0,1.0,0],"2026-07":[1.0,0.0,1],"2026-08":[1.0,1.0,0]},"ESCOBILLON CON PALO":{"2025-04":[0.0,0.0,0],"2025-05":[0.0,0.0,0],"2025-06":[0.0,0.0,0],"2025-07":[0.0,0.0,0],"2025-08":[0.0,0.0,0],"2025-09":[0.0,0.0,0],"2025-10":[0.0,0.0,0],"2025-11":[0.0,0.0,0],"2025-12":[0.0,0.0,0],"2026-01":[0.0,0.0,0],"2026-02":[0.0,0.0,0],"2026-03":[0.0,0.0,0],"2026-04":[0.0,0.0,0],"2026-05":[0.0,0.0,0],"2026-06":[0.0,0.0,0],"2026-07":[0.0,0.0,0],"2026-08":[0.0,0.0,0]},"ESPONJA":{"2025-05":[1.0,0.0,1],"2025-06":[1.0,0.0,1],"2025-07":[1.0,1.0,0],"2025-08":[1.0,1.0,0],"2025-09":[1.0,0.0,1],"2025-10":[1.0,1.0,0],"2025-11":[1.0,1.0,0],"2025-12":[1.0,1.0,0],"2026-01":[1.0,1.0,0],"2026-02":[1.0,0.0,1],"2026-03":[1.0,1.0,0],"2026-04":[1.0,0.0,1],"2026-05":[1.0,1.0,0],"2026-06":[1.0,1.0,0],"2026-07":[1.0,1.0,0],"2026-08":[1.0,1.0,0]},"JABON LIQUIDO PARA MANOS X 5LTS":{"2025-04":[1.0,1.0,0],"2025-05":[1.0,1.0,0],"2025-06":[1.0,1.0,0],"2025-07":[1.0,1.0,0],"2025-08":[1.0,0.0,1],"2025-09":[1.0,1.0,0],"2025-10":[1.0,0.0,1],"2025-11":[1.0,1.0,0],"2025-12":[1.0,1.0,0],"2026-01":[1.0,0.0,1],"2026-02":[1.0,1.0,0],"2026-03":[1.0,1.0,0],"2026-04":[1.0,0.0,1],"2026-05":[1.0,1.0,0],"2026-06":[1.0,0.0,1],"2026-07":[1.0,1.0,0],"2026-08":[1.0,1.0,0]},"LAVANDINA":{"2025-04":[1.0,1.0,0],"2025-05":[1.0,1.0,0],"2025-06":[1.0,1.0,0],"2025-07":[1.0,1.0,0],"2025-08":[1.0,1.0,0],"2025-09":[1.0,1.0,0],"2025-10":[1.0,1.0,0],"2025-11":[1.0,1.0,0],"2025-12":[1.0,1.0,0],"2026-01":[1.0,1.0,0],"2026-02":[1.0,1.0,0],"2026-03":[1.0,1.0,0],"2026-04":[1.0,1.0,0],"2026-05":[1.0,1.0,0],"2026-06":[1.0,0.0,0],"2026-07":[1.0,0.0,1],"2026-08":[1.0,1.0,0]},"PALA":{"2025-04":[0.0,0.0,0],"2025-05":[0.0,0.0,0],"2025-06":[0.0,0.0,0],"2025-07":[0.0,0.0,0],"2025-08":[0.0,0.0,0],"2025-09":[0.0,0.0,0],"2025-10":[0.0,0.0,0],"2025-11":[0.0,0.0,0],"2025-12":[0.0,0.0,0],"2026-01":[0.0,0.0,1],"2026-02":[0.0,0.0,0],"2026-03":[0.0,0.0,0],"2026-04":[0.0,0.0,0],"2026-05":[0.0,0.0,0],"2026-06":[0.0,0.0,0],"2026-07":[0.0,0.0,1],"2026-08":[0.0,0.0,0]},"PAPEL HIGIENICO X 80 X 4 UN":{"2025-04":[10.0,6.0,4],"2025-05":[10.0,5.0,5],"2025-06":[10.0,10.0,0],"2025-07":[10.0,0.0,10],"2025-08":[10.0,3.0,7],"2025-09":[10.0,6.0,4],"2025-10":[10.0,6.0,4],"2025-11":[10.0,4.0,6],"2025-12":[10.0,5.0,5],"2026-01":[10.0,5.0,5],"2026-02":[10.0,5.0,5],"2026-03":[10.0,6.0,4],"2026-04":[10.0,4.0,6],"2026-05":[10.0,5.0,5],"2026-06":[10.0,5.0,5],"2026-07":[10.0,5.0,5],"2026-08":[10.0,6.0,4]},"PAÑO PARA LUSTRA MUEBLE":{"2025-04":[1.0,1.0,0],"2025-05":[1.0,1.0,0],"2025-06":[1.0,0.0,1],"2025-07":[1.0,1.0,0],"2025-08":[1.0,0.0,1],"2025-09":[1.0,1.0,0],"2025-10":[1.0,1.0,0],"2025-11":[1.0,0.0,1],"2025-12":[1.0,0.0,1],"2026-01":[1.0,0.0,1],"2026-02":[1.0,1.0,0],"2026-03":[1.0,1.0,0],"2026-04":[1.0,1.0,0],"2026-05":[1.0,1.0,0],"2026-06":[1.0,1.0,0],"2026-07":[1.0,1.0,0],"2026-08":[1.0,1.0,0]},"POMADA (BOTINES)":{"2026-02":[1.0,0.0,1],"2026-03":[1.0,1.0,0],"2026-04":[1.0,0.0,1],"2026-05":[1.0,1.0,0],"2026-06":[1.0,0.0,1],"2026-07":[1.0,1.0,0],"2026-08":[1.0,0.0,1]},"REJILLA AMARILLA":{"2025-04":[2.0,2.0,0],"2025-05":[2.0,2.0,0],"2025-06":[2.0,2.0,0],"2025-07":[2.0,1.0,1],"2025-08":[2.0,2.0,0],"2025-09":[2.0,2.0,0],"2025-10":[2.0,2.0,0],"2025-11":[2.0,1.0,1],"2025-12":[2.0,2.0,0],"2026-01":[2.0,2.0,0],"2026-02":[2.0,2.0,0],"2026-03":[2.0,2.0,0],"2026-04":[2.0,2.0,0],"2026-05":[2.0,2.0,0],"2026-06":[2.0,1.0,1],"2026-07":[2.0,2.0,0],"2026-08":[2.0,2.0,0]},"ROLLO DE BOLSAS PLASTICAS X 1KG":{"2025-04":[2.0,0.0,2],"2025-05":[2.0,1.0,1],"2025-06":[2.0,2.0,0],"2025-07":[2.0,1.0,1],"2025-08":[2.0,1.0,1],"2025-09":[2.0,2.0,0],"2025-10":[2.0,2.0,0],"2025-11":[2.0,2.0,0],"2025-12":[2.0,0.0,2],"2026-01":[2.0,0.0,2],"2026-02":[2.0,1.0,1],"2026-03":[2.0,2.0,0],"2026-04":[2.0,1.0,1],"2026-05":[2.0,1.0,1],"2026-06":[2.0,0.0,2],"2026-07":[2.0,2.0,0],"2026-08":[2.0,1.0,1]},"ROLLO DE BOLSAS PLASTICAS X 2KG":{"2025-04":[2.0,2.0,0],"2025-05":[2.0,1.0,1],"2025-06":[2.0,1.0,1],"2025-07":[2.0,1.0,1],"2025-08":[2.0,1.0,1],"2025-09":[2.0,2.0,0],"2025-10":[2.0,2.0,0],"2025-11":[2.0,2.0,0],"2025-12":[2.0,2.0,0],"2026-01":[2.0,2.0,0],"2026-02":[2.0,2.0,0],"2026-03":[2.0,2.0,0],"2026-04":[2.0,2.0,0],"2026-05":[2.0,2.0,0],"2026-06":[2.0,2.0,0],"2026-07":[2.0,2.0,0],"2026-08":[2.0,2.0,0]},"ROLLO DE BOLSAS PLASTICAS X 5KG":{"2025-04":[2.0,1.0,1],"2025-05":[2.0,1.0,1],"2025-06":[2.0,2.0,0],"2025-07":[2.0,1.0,1],"2025-08":[2.0,2.0,0],"2025-09":[2.0,2.0,0],"2025-10":[2.0,2.0,0],"2025-11":[2.0,2.0,0],"2025-12":[2.0,2.0,0],"2026-01":[2.0,2.0,0],"2026-02":[2.0,2.0,0],"2026-03":[2.0,2.0,0],"2026-04":[2.0,1.0,1],"2026-05":[2.0,2.0,0],"2026-06":[2.0,2.0,0],"2026-07":[2.0,2.0,0],"2026-08":[2.0,1.0,1]},"TRAPO PARA PISOS":{"2025-04":[4.0,4.0,0],"2025-05":[4.0,4.0,0],"2025-06":[4.0,2.0,2],"2025-07":[4.0,4.0,0],"2025-08":[4.0,4.0,0],"2025-09":[4.0,4.0,0],"2025-10":[4.0,4.0,0],"2025-11":[4.0,3.0,1],"2025-12":[4.0,3.0,1],"2026-01":[4.0,3.0,1],"2026-02":[4.0,4.0,0],"2026-03":[4.0,4.0,0],"2026-04":[4.0,1.0,3],"2026-05":[4.0,4.0,0],"2026-06":[4.0,4.0,0],"2026-07":[4.0,4.0,0],"2026-08":[4.0,4.0,0]}}};
+
+var MESES_NOM = ["enero","febrero","marzo","abril","mayo","junio",
+                 "julio","agosto","septiembre","octubre","noviembre","diciembre"];
+var CATS = ["CAFETERIA","LIBRERIA","LIMPIEZA"];
+var CAT_NOM = {CAFETERIA:"CAFETERÍA", LIBRERIA:"LIBRERÍA", LIMPIEZA:"LIMPIEZA"};
+
+/* ---- Estado ---- */
+var E = null;      // {items:[{n,c,max,activo}], conteos:{mes:{insumo:actual}}, meses:[]}
+var mesAct = "";
+var guardando = false, pendiente = false;
+
+/* ---------------- Arranque ---------------- */
+init();
+
+function init(){
+  try{ lugar = localStorage.getItem("insumos_lugar") || "deposito"; }catch(e){}
+  if(!LUGARES.filter(function(l){ return l.id === lugar; }).length) lugar = "deposito";
+  cargar();
+}
+
+/* Carga (o recarga) el estado del lugar actual */
+function cargar(){
+  var av = document.getElementById("avisoLocal");
+  if(av) av.style.display = "none";
+  var local = null;
+  try{
+    local = JSON.parse(localStorage.getItem(claveLocal())
+                    || (lugar === "deposito" ? localStorage.getItem("insumos_martel") : null)
+                    || "null");
+  }catch(e){}
+
+  if(!EN_LINEA){
+    modoLocal("Sin conexión al servidor: se guarda solo en este dispositivo.");
+    return usar(null, local);
+  }
+
+  estado("cargando");
+  leerServidor(lugar, function(err, res){
+    if(err){
+      modoLocal("No se pudo conectar. Seguí cargando: se guarda acá y sube cuando vuelva.");
+      usar(null, local);
+    } else {
+      usar(res, local);      // lo del servidor manda; si viene vacío, subimos el nuestro
+    }
+  });
+}
+
+/* Decide con qué estado arranca: el del servidor manda; si no hay, sube el nuestro.
+   El depósito arranca con los 17 meses del .ods; los demás lugares con la misma
+   lista de insumos pero sin historial — ese historial es del depósito, no suyo.  */
+function usar(res, local){
+  if(res && res.items && res.items.length) E = res;
+  else {
+    E = local || (lugar === "deposito" ? desdePrecarga() : catalogoNuevo());
+    if(EN_LINEA) setTimeout(subir, 0);      // primera vez: subimos el nuestro
+  }
+  arrancar();
+}
+
+/* Lugar nuevo: la misma lista de insumos y los mismos máximos de arranque
+   (las categorías son las mismas en todas las bocas), mes actual vacío.     */
+function catalogoNuevo(){
+  var m = mesHoy();
+  var st = {items:[], conteos:{}, maxs:{}, manual:{}, meses:[m]};
+  st.conteos[m] = {}; st.maxs[m] = {}; st.manual[m] = {};
+  PRECARGA.items.forEach(function(it){
+    st.items.push({n:it.n, c:it.c, max:it.max, activo:true});
+    st.maxs[m][it.n] = it.max;
+  });
+  return st;
+}
+
+function modoLocal(msg){
+  var a = document.getElementById("avisoLocal");
+  a.querySelector("span").innerHTML = "<b>Modo local:</b> " + msg;
+  a.style.display = "flex";
+}
+
+/* Construye el estado inicial con el histórico del .ods.
+   hist[insumo][mes] = [máximo, actual, pedido que se mandó realmente]        */
+function desdePrecarga(){
+  var st = {items:[], conteos:{}, maxs:{}, manual:{}, meses:PRECARGA.meses.slice()};
+  PRECARGA.items.forEach(function(it){
+    st.items.push({n:it.n, c:it.c, max:it.max, activo:true});
+  });
+  st.meses.forEach(function(m){
+    st.conteos[m] = {}; st.maxs[m] = {}; st.manual[m] = {};
+    st.items.forEach(function(it){
+      var h = PRECARGA.hist[it.n] && PRECARGA.hist[it.n][m];
+      if(!h) return;
+      st.maxs[m][it.n] = h[0];
+      st.conteos[m][it.n] = h[1];
+      // Si el pedido que se mandó no coincide con MÁXIMO − ACTUAL, fue a mano:
+      // queda guardado como tal para que el mes viejo se vea igual que en la planilla.
+      if(h[2] !== Math.max(0, h[0] - h[1])) st.manual[m][it.n] = h[2];
+    });
+  });
+  return st;
+}
+
+function arrancar(){
+  if(!E.meses.length) E.meses = [mesHoy()];
+  if(!E.maxs) E.maxs = {};                        // por si viene de una versión anterior
+  if(!E.manual) E.manual = {};
+  mesAct = E.meses[E.meses.length-1];
+  pintarLugares();
+  pintarMeses();
+  pintar();
+  pintarHist();
+  document.querySelectorAll(".tab").forEach(function(t){
+    t.onclick = function(){
+      document.querySelectorAll(".tab").forEach(function(x){x.classList.remove("on")});
+      t.classList.add("on");
+      var v = t.dataset.v;
+      document.getElementById("vPed").classList.toggle("on", v === "ped");
+      document.getElementById("vHist").classList.toggle("on", v === "hist");
+      document.getElementById("vCompras").classList.toggle("on", v === "compras");
+      document.getElementById("pie").style.display = v === "ped" ? "flex" : "none";
+      if(v === "hist") pintarHist();
+      if(v === "compras") pintarCompras();
+    };
+  });
+  // COMPRAS (consolidado de las 8 bocas) siempre disponible: lo usa Administración
+  document.getElementById("tabCompras").style.display = EN_LINEA ? "" : "none";
+}
+
+/* ---------------- Utilidades ---------------- */
+function mesHoy(){
+  var d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0");
+}
+function sigMes(m){
+  var p = m.split("-"), a = +p[0], x = +p[1] + 1;
+  if(x > 12){ x = 1; a++; }
+  return a + "-" + String(x).padStart(2,"0");
+}
+function nomMes(m){
+  var p = m.split("-");
+  return MESES_NOM[+p[1]-1].toUpperCase() + " " + p[0];
+}
+function activos(){ return E.items.filter(function(i){return i.activo}); }
+function conteo(){ return E.conteos[mesAct] || (E.conteos[mesAct] = {}); }
+function maxs(){ return E.maxs[mesAct] || (E.maxs[mesAct] = {}); }
+function manual(){ return E.manual[mesAct] || (E.manual[mesAct] = {}); }
+
+function actual(n){ var v = conteo()[n]; return (v===undefined||v===null||v==="") ? null : +v; }
+
+/* MÁXIMO del mes que se está viendo; si no hay, el vigente del insumo */
+function maxDe(it){
+  var v = maxs()[it.n];
+  return (v===undefined||v===null||v==="") ? (it.max||0) : +v;
+}
+/* La cuenta: MÁXIMO − ACTUAL */
+function calcDe(it){
+  var a = actual(it.n);
+  return Math.max(0, maxDe(it) - (a===null ? 0 : a));
+}
+/* Lo que se pide: la cuenta, salvo que se haya pisado a mano */
+function pedidoDe(it){
+  var m = manual()[it.n];
+  return (m===undefined||m===null||m==="") ? calcDe(it) : +m;
+}
+function esManual(it){
+  var m = manual()[it.n];
+  return !(m===undefined||m===null||m==="");
+}
+
+/* ---------------- Pintar el pedido ---------------- */
+function pintarLugares(){
+  var s = document.getElementById("selLugar");
+  s.innerHTML = LUGARES.map(function(l){
+    return '<option value="'+l.id+'">'+l.n+'</option>';
+  }).join("");
+  s.value = lugar;
+  s.onchange = function(){ cambiarLugar(this.value); };
+}
+
+/* Cambiar de lugar: subir lo que quedó pendiente y cargar el estado del otro.
+   Son estados separados: no se comparte ni la lista ni los máximos.          */
+function cambiarLugar(id){
+  if(id === lugar) return;
+  if(tDebounce){ clearTimeout(tDebounce); tDebounce = null; subir(); }
+  lugar = id;
+  try{ localStorage.setItem("insumos_lugar", lugar); }catch(e){}
+  estado("cargando");
+  cargar();
+}
+
+function pintarMeses(){
+  var s = document.getElementById("selMes");
+  s.innerHTML = E.meses.map(function(m){
+    return '<option value="'+m+'">'+nomMes(m)+'</option>';
+  }).join("");
+  s.value = mesAct;
+  s.onchange = function(){ mesAct = this.value; pintar(); };
+}
+
+function pintar(){
+  document.getElementById("subTit").textContent = nomLugar(lugar) + " · " + nomMes(mesAct);
+  document.getElementById("tituloImp").textContent =
+    "INSUMOS " + nomLugar(lugar).toUpperCase() + " — " + nomMes(mesAct);
+  var bajas = E.items.length - activos().length;
+  var bb = document.getElementById("btnBajas");
+  bb.style.display = bajas ? "" : "none";
+  bb.textContent = "Ver dados de baja (" + bajas + ")";
+
+  var html = "";
+  CATS.forEach(function(c){
+    var its = activos().filter(function(i){return i.c === c});
+    if(!its.length) return;
+    var nPide = its.filter(function(i){return pedidoDe(i) > 0}).length;
+    html += '<div class="cat"><div class="cat-hd"><h2>'+CAT_NOM[c]+'</h2>'+
+            '<span>'+(nPide ? nPide+" a pedir" : "completo")+'</span></div>'+
+            '<table><thead><tr><th>Insumo</th><th class="c-num">Máximo</th>'+
+            '<th class="c-num">Actual</th><th class="c-ped">Pedido</th><th style="width:26px"></th>'+
+            '</tr></thead><tbody>';
+    its.forEach(function(it){
+      var i = E.items.indexOf(it), a = actual(it.n), p = pedidoDe(it);
+      html += '<tr id="f'+i+'" class="'+(p>0?"pide":"cero")+'">'+
+        '<td class="c-nom">'+it.n+'</td>'+
+        '<td class="c-num"><input class="max" type="number" inputmode="numeric" min="0" '+
+          'value="'+maxDe(it)+'" onchange="setMax('+i+',this.value)"></td>'+
+        '<td class="c-num"><input class="inp'+(a===null?" vacio":"")+'" type="number" '+
+          'inputmode="numeric" min="0" placeholder="—" value="'+(a===null?"":a)+'" '+
+          'oninput="setAct('+i+',this.value)"></td>'+
+        '<td class="c-ped"><input class="ped'+(esManual(it)?" man":"")+'" type="number" '+
+          'inputmode="numeric" min="0" value="'+p+'" oninput="setPed('+i+',this.value)" '+
+          'title="'+(esManual(it)?"A mano. Borralo y vuelve a la cuenta ("+calcDe(it)+")":"Sale de la cuenta. Se puede pisar a mano")+'"></td>'+
+        '<td><button class="x" title="Dar de baja" onclick="baja('+i+')">×</button></td></tr>';
+    });
+    html += "</tbody></table></div>";
+  });
+  document.getElementById("cats").innerHTML = html;
+  totales();
+}
+
+function totales(){
+  var its = activos().filter(function(i){return pedidoDe(i) > 0});
+  var un = its.reduce(function(s,i){return s + pedidoDe(i)}, 0);
+  var sinCargar = activos().filter(function(i){return actual(i.n) === null}).length;
+  document.getElementById("totItems").textContent = its.length;
+  document.getElementById("totDet").innerHTML = "ítems a pedir · " + un + " unidades" +
+    (sinCargar ? '<br><span style="color:#b45309">'+sinCargar+" sin contar</span>" : "");
+  document.getElementById("btnListo").disabled = !its.length;
+}
+
+/* ---------------- Edición ---------------- */
+function setAct(i, v){
+  var it = E.items[i];
+  conteo()[it.n] = (v === "" ? null : Math.max(0, +v));
+  var f = document.getElementById("f"+i);
+  f.querySelector(".inp").classList.toggle("vacio", actual(it.n) === null);
+  if(!esManual(it)) f.querySelector(".ped").value = calcDe(it);   // a mano no se toca
+  var p = pedidoDe(it);
+  f.className = p > 0 ? "pide" : "cero";
+  totales(); guardar();
+}
+
+/* El máximo se guarda para ESTE mes y queda como vigente para los que vengan */
+function setMax(i, v){
+  var it = E.items[i], n = Math.max(0, +v || 0);
+  maxs()[it.n] = n; it.max = n;
+  pintar(); guardar();
+}
+
+/* PEDIDO a mano. Vacío = vuelve a la cuenta. Igual a la cuenta = no se guarda como manual. */
+function setPed(i, v){
+  var it = E.items[i];
+  if(v === "" || +v === calcDe(it)) delete manual()[it.n];
+  else manual()[it.n] = Math.max(0, +v);
+  var f = document.getElementById("f"+i);
+  f.querySelector(".ped").classList.toggle("man", esManual(it));
+  f.className = pedidoDe(it) > 0 ? "pide" : "cero";
+  totales(); guardar();
+}
+function baja(i){
+  var it = E.items[i];
+  if(!confirm('Dar de baja "'+it.n+'"?\n\nNo se borra el histórico: deja de aparecer en el pedido.')) return;
+  it.activo = false; pintar(); guardar();
+}
+
+function verBajas(){
+  var b = E.items.filter(function(i){return !i.activo});
+  abrir('<h3>Insumos dados de baja</h3><p>El histórico se conserva. Tocá para volver a activarlo.</p>'+
+    '<table class="hist-t">'+b.map(function(it){
+      var i = E.items.indexOf(it);
+      return '<tr><td class="c-nom">'+it.n+'<br><span style="font-size:11px;color:#6b7280">'+
+        CAT_NOM[it.c]+'</span></td><td style="width:90px;text-align:right">'+
+        '<button class="btn2" onclick="reactivar('+i+')">Activar</button></td></tr>';
+    }).join("")+'</table><div class="modal-f"><button class="btn2" onclick="cerrar()">Cerrar</button></div>');
+}
+function reactivar(i){ E.items[i].activo = true; pintar(); guardar(); cerrar(); }
+
+function abrirNuevo(){
+  abrir('<h3>Agregar insumo</h3><p>Se suma a la lista de este mes en adelante.</p>'+
+    '<div class="campo"><label>Nombre</label><input id="nvN" placeholder="Ej: PAPEL HIGIÉNICO X 80 X 4"></div>'+
+    '<div class="campo"><label>Categoría</label><select id="nvC">'+
+      CATS.map(function(c){return '<option value="'+c+'">'+CAT_NOM[c]+'</option>'}).join("")+
+    '</select></div>'+
+    '<div class="campo"><label>Máximo (lo que tiene que haber)</label>'+
+      '<input id="nvM" type="number" inputmode="numeric" min="0" value="1"></div>'+
+    '<div class="modal-f"><button class="btn" onclick="guardarNuevo()">Agregar</button>'+
+    '<button class="btn2" onclick="cerrar()">Cancelar</button></div>');
+  setTimeout(function(){ document.getElementById("nvN").focus(); }, 80);
+}
+function guardarNuevo(){
+  var n = document.getElementById("nvN").value.trim().toUpperCase();
+  if(!n) return alert("Falta el nombre.");
+  var ya = E.items.filter(function(i){return i.n === n})[0];
+  if(ya){
+    if(!ya.activo && confirm('"'+n+'" existe y está dado de baja. ¿Activarlo?')){
+      ya.activo = true; pintar(); guardar(); cerrar();
+    } else alert("Ese insumo ya está en la lista.");
+    return;
+  }
+  var mx = Math.max(0, +document.getElementById("nvM").value || 0);
+  E.items.push({n:n, c:document.getElementById("nvC").value, max:mx, activo:true});
+  maxs()[n] = mx;
+  pintar(); guardar(); cerrar();
+}
+
+/* Empezar de nuevo: borra lo contado de este mes, deja los máximos.
+   Es para cuando te equivocaste contando, no para deshacer el mes.        */
+function vaciarMes(){
+  var cargados = activos().filter(function(i){ return actual(i.n) !== null; }).length;
+  if(!cargados) return alert("En " + nomMes(mesAct) + " todavía no hay nada cargado.");
+  if(!confirm("¿Empezar de nuevo el conteo de " + nomMes(mesAct) + "?\n\n" +
+              "Se borra lo que cargaste en ACTUAL (" + cargados + " ítems) y los pedidos que pisaste " +
+              "a mano.\nLos máximos NO se tocan.")) return;
+  E.conteos[mesAct] = {};
+  E.manual[mesAct] = {};
+  pintar(); pintarHist(); guardar();
+}
+
+/* Borrar el mes entero: se va de la lista y del historial. */
+function borrarMes(){
+  if(E.meses.length < 2)
+    return alert("Es el único mes que hay, no se puede borrar.\n\n" +
+                 "Si lo que querés es volver a contar, usá «Empezar de nuevo».");
+  if(!confirm("¿Borrar " + nomMes(mesAct) + " completo?\n\n" +
+              "Se va de la lista de meses y del historial. Esto no se puede deshacer.")) return;
+  var i = E.meses.indexOf(mesAct);
+  E.meses.splice(i, 1);
+  delete E.conteos[mesAct];
+  delete E.maxs[mesAct];
+  delete E.manual[mesAct];
+  mesAct = E.meses[Math.min(i, E.meses.length - 1)];
+  pintarMeses(); pintar(); pintarHist(); guardar();
+}
+
+function nuevoMes(){
+  var ult = E.meses[E.meses.length-1], m = sigMes(ult);
+  if(!confirm("Abrir el pedido de "+nomMes(m)+"?\n\nLos máximos se mantienen. El actual arranca vacío.")) return;
+  E.meses.push(m);
+  E.conteos[m] = {};
+  E.manual[m] = {};
+  E.maxs[m] = {};
+  E.items.forEach(function(it){                        // los máximos se arrastran
+    var v = E.maxs[ult] ? E.maxs[ult][it.n] : undefined;
+    E.maxs[m][it.n] = (v===undefined||v===null||v==="") ? (it.max||0) : +v;
+  });
+  mesAct = m;
+  pintarMeses(); pintar(); guardar();
+}
+
+/* ---------------- Historial ---------------- */
+function pintarHist(){
+  var ms = E.meses;
+  var filas = E.items.map(function(it){
+    var serie = ms.map(function(m){
+      var v = E.conteos[m] ? E.conteos[m][it.n] : undefined;
+      return (v === undefined || v === null || v === "") ? null : +v;
+    });
+    var medidos = serie.filter(function(v){return v !== null});
+    var ceros = medidos.filter(function(v){return v === 0}).length;
+    return {it:it, serie:serie, n:medidos.length, ceros:ceros,
+            pct: medidos.length ? ceros/medidos.length : 0,
+            tope: Math.max.apply(null, medidos.concat([it.max, 1]))};
+  }).filter(function(f){return f.n > 0})
+    .sort(function(a,b){ return b.pct - a.pct || b.ceros - a.ceros; });
+
+  document.getElementById("histBody").innerHTML = filas.map(function(f){
+    var cls = f.pct >= .5 ? "mal" : (f.pct >= .2 ? "reg" : "ok");
+    var barras = f.serie.map(function(v){
+      if(v === null) return '<div class="barra" style="height:2px;background:#f1f2f4"></div>';
+      if(v === 0)    return '<div class="barra b0"></div>';
+      return '<div class="barra" style="height:'+Math.max(15, Math.round(v/f.tope*100))+'%"></div>';
+    }).join("");
+    return '<tr'+(f.it.activo?"":' style="opacity:.45"')+'>'+
+      '<td class="c-nom">'+f.it.n+'<br><span style="font-size:10.5px;color:#9ca3af">'+
+        CAT_NOM[f.it.c]+(f.it.activo?"":" · de baja")+'</span></td>'+
+      '<td><div class="barras">'+barras+'</div></td>'+
+      '<td style="text-align:center;font-weight:700">'+f.it.max+'</td>'+
+      '<td style="text-align:center"><span class="pill '+cls+'">'+f.ceros+" de "+f.n+'</span></td></tr>';
+  }).join("");
+}
+
+/* ---------------- Compras (consolidado de las 8 bocas) ----------------
+   Solo tiene sentido para quien ve los archivos de las demás bocas (un admin
+   del servidor). Trae el estado de cada lugar, toma su ÚLTIMO mes y suma el
+   pedido por insumo, agrupado por proveedor (categoría).                     */
+
+/* El pedido de un item dentro de un estado ajeno, sin tocar los globales.
+   Replica la regla: manual si lo hay, si no MÁXIMO − ACTUAL.                 */
+function pedidoEn(est, mes, nombre, maxCat){
+  var man = est.manual && est.manual[mes] ? est.manual[mes][nombre] : undefined;
+  if(!(man===undefined||man===null||man==="")) return +man;
+  var mx = est.maxs && est.maxs[mes] ? est.maxs[mes][nombre] : undefined;
+  if(mx===undefined||mx===null||mx==="") mx = maxCat;         // fallback: máximo del item
+  var ac = est.conteos && est.conteos[mes] ? est.conteos[mes][nombre] : undefined;
+  ac = (ac===undefined||ac===null||ac==="") ? 0 : +ac;
+  return Math.max(0, (mx||0) - ac);
+}
+
+var comprasCache = null;
+
+function pintarCompras(){
+  var cont = document.getElementById("comprasBody");
+  cont.innerHTML = '<div style="padding:24px;text-align:center;color:#9ca3af">Juntando las bocas…</div>';
+  juntarBocas(function(bocas){
+    comprasCache = bocas;
+    // sumar por insumo, agrupado por categoría (proveedor)
+    var porItem = {};        // nombre -> {cat, total, det:[{lugar,q}]}
+    bocas.forEach(function(b){
+      if(!b.estado) return;
+      var mes = b.mes;
+      b.estado.items.forEach(function(it){
+        if(!it.activo) return;
+        var q = pedidoEn(b.estado, mes, it.n, it.max);
+        if(q <= 0) return;
+        var k = it.n;
+        if(!porItem[k]) porItem[k] = {cat:it.c, total:0, det:[]};
+        porItem[k].total += q;
+        porItem[k].det.push({lugar:b.n, q:q});
+      });
+    });
+
+    var html = "";
+    // resumen de estado de cada boca
+    var listas = bocas.filter(function(b){ return b.estado; }).length;
+    html += '<div class="cmp-bocas">'+ bocas.map(function(b){
+      return '<span class="chip '+(b.estado?"si":"no")+'">'+b.n+
+        (b.estado ? ' · '+nomMes(b.mes) : ' · sin cargar')+'</span>';
+    }).join("") + '</div>';
+
+    CATS.forEach(function(c){
+      var items = Object.keys(porItem).filter(function(n){ return porItem[n].cat === c; })
+        .sort(function(a,b){ return porItem[b].total - porItem[a].total; });
+      if(!items.length) return;
+      var totalCat = items.reduce(function(s,n){ return s + porItem[n].total; }, 0);
+      html += '<div class="cat"><div class="cat-hd"><h2>'+CAT_NOM[c]+'</h2>'+
+        '<span>'+totalCat+' u · proveedor aparte</span></div>'+
+        '<table><thead><tr><th>Insumo</th><th class="c-ped">Total</th>'+
+        '<th>Por boca</th></tr></thead><tbody>';
+      items.forEach(function(n){
+        var r = porItem[n];
+        var det = r.det.sort(function(a,b){return b.q-a.q})
+          .map(function(d){ return d.lugar+" "+d.q; }).join(" · ");
+        html += '<tr><td class="c-nom">'+n+'</td>'+
+          '<td class="c-ped" style="color:var(--verde);font-weight:800">'+r.total+'</td>'+
+          '<td style="font-size:12px;color:#6b7280">'+det+'</td></tr>';
+      });
+      html += '</tbody></table>'+
+        '<button class="btn" style="margin:10px 12px" onclick="copiarCompras(\''+c+'\')">'+
+        'Copiar '+CAT_NOM[c]+' para WhatsApp</button></div>';
+    });
+
+    if(!Object.keys(porItem).length)
+      html += '<div class="h-intro">Ninguna boca tiene algo para pedir todavía. '+
+              (listas?'':'Y todavía no hay pedidos cargados en el servidor.')+'</div>';
+
+    cont.innerHTML = html;
+  });
+}
+
+/* Trae el estado de las 8 bocas en UNA sola llamada (?all=1).
+   El backend devuelve {deposito:{...}, malvinas:{...}, ...}.                 */
+function juntarBocas(cb){
+  var vacio = LUGARES.map(function(l){ return {id:l.id, n:l.n, estado:null, mes:null}; });
+  if(!EN_LINEA) return cb(vacio);
+  var x = new XMLHttpRequest();
+  x.open("GET", APPS_SCRIPT_URL + "?all=1", true); x.timeout = 25000;
+  x.onload = function(){
+    var data = {};
+    try{ data = JSON.parse(x.responseText) || {}; }catch(e){}
+    cb(LUGARES.map(function(l){
+      var est = data[l.id];
+      var ok = est && est.meses && est.meses.length;
+      return {id:l.id, n:l.n, estado: ok ? est : null,
+              mes: ok ? est.meses[est.meses.length-1] : null};
+    }));
+  };
+  x.onerror = x.ontimeout = function(){ cb(vacio); };
+  x.send();
+}
+
+/* Texto de compras de una categoría (proveedor), sumado entre bocas */
+function textoCompras(cat){
+  if(!comprasCache) return "";
+  var porItem = {};
+  comprasCache.forEach(function(b){
+    if(!b.estado) return;
+    b.estado.items.forEach(function(it){
+      if(!it.activo || it.c !== cat) return;
+      var q = pedidoEn(b.estado, b.mes, it.n, it.max);
+      if(q > 0) porItem[it.n] = (porItem[it.n] || 0) + q;
+    });
+  });
+  var t = "*COMPRA " + CAT_NOM[cat] + " — TODAS LAS BOCAS*\n\n", tot = 0;
+  Object.keys(porItem).sort(function(a,b){ return porItem[b]-porItem[a]; }).forEach(function(n){
+    tot += porItem[n]; t += "• " + n + ": " + porItem[n] + "\n";
+  });
+  return t + "\nTotal: " + tot + " unidades";
+}
+
+function copiarCompras(cat){
+  var txt = textoCompras(cat);
+  var ta = document.createElement("textarea");
+  ta.value = txt; document.body.appendChild(ta); ta.select();
+  var ok = false;
+  try{ ok = document.execCommand("copy"); }catch(e){}
+  if(navigator.clipboard && !ok){ navigator.clipboard.writeText(txt); ok = true; }
+  document.body.removeChild(ta);
+  var b = event.target;
+  var prev = b.textContent;
+  b.textContent = ok ? "✓ Copiado" : "Copialo a mano";
+  setTimeout(function(){ b.textContent = prev; }, 2000);
+}
+
+/* ---------------- Salida ----------------
+   Cada categoría es un proveedor distinto (cafetería / librería / limpieza),
+   así que el texto se puede pedir por categoría — un mensaje por proveedor —
+   o todo junto. Sin categoría = todo junto.                                  */
+function textoWA(cat){
+  var cats = cat ? [cat] : CATS;
+  var titulo = cat ? CAT_NOM[cat] : "INSUMOS";
+  var t = "*" + titulo + " " + nomLugar(lugar).toUpperCase() + " — " + nomMes(mesAct) + "*\n";
+  var tot = 0;
+  cats.forEach(function(c){
+    var its = activos().filter(function(i){ return i.c === c && pedidoDe(i) > 0; });
+    if(!its.length) return;
+    if(!cat) t += "\n*" + CAT_NOM[c] + "*\n";      // en "todo junto" van los subtítulos
+    else t += "\n";
+    its.forEach(function(it){ var p = pedidoDe(it); tot += p; t += "• " + it.n + ": " + p + "\n"; });
+  });
+  return t + "\nTotal: " + tot + " unidades";
+}
+
+/* Cuántas unidades a pedir tiene una categoría (0 = no hay nada para ese proveedor) */
+function totalCat(cat){
+  return activos().filter(function(i){ return i.c === cat; })
+    .reduce(function(s,i){ return s + pedidoDe(i); }, 0);
+}
+
+function abrirSalida(){
+  // un bloque por proveedor (categoría) que tenga algo para pedir
+  var conPedido = CATS.filter(function(c){ return totalCat(c) > 0; });
+  if(!conPedido.length) return alert("Todavía no hay nada para pedir en " + nomMes(mesAct) + ".");
+
+  var bloques = conPedido.map(function(c, i){
+    return '<div class="prov">'+
+      '<div class="prov-hd"><b>'+CAT_NOM[c]+'</b> · '+totalCat(c)+' u '+
+        '<span>proveedor aparte</span></div>'+
+      '<textarea id="wa'+i+'" readonly>'+textoWA(c).replace(/</g,"&lt;")+'</textarea>'+
+      '<button class="btn" onclick="copiar('+i+',this)">Copiar '+CAT_NOM[c]+'</button>'+
+    '</div>';
+  }).join("");
+
+  var todo = conPedido.length > 1
+    ? '<details class="prov"><summary>Ver todo junto (un solo mensaje)</summary>'+
+      '<textarea id="waAll" readonly>'+textoWA().replace(/</g,"&lt;")+'</textarea>'+
+      '<button class="btn2" onclick="copiar(\'All\',this)">Copiar todo junto</button></details>'
+    : "";
+
+  abrir('<h3>Pedido de '+nomLugar(lugar)+' — '+nomMes(mesAct)+'</h3>'+
+    '<p>Cada categoría es un proveedor distinto: copiá y mandá una por una. '+
+    'Solo aparecen las que tienen algo para pedir.</p>'+
+    bloques + todo +
+    '<div class="modal-f">'+
+      '<button class="btn2" onclick="bajarExcel()">Excel (todo)</button>'+
+      '<button class="btn2" onclick="cerrar();setTimeout(function(){window.print()},150)">Imprimir</button>'+
+      '<button class="btn2" onclick="cerrar()">Cerrar</button>'+
+    '</div>');
+}
+
+function copiar(id, btn){
+  var ta = document.getElementById("wa" + id);
+  ta.select(); ta.setSelectionRange(0, 99999);
+  var ok = false;
+  try{ ok = document.execCommand("copy"); }catch(e){}
+  if(navigator.clipboard && !ok){ navigator.clipboard.writeText(ta.value); ok = true; }
+  var txt = btn.textContent;
+  btn.textContent = ok ? "✓ Copiado — pegalo en WhatsApp" : "Copialo a mano";
+  setTimeout(function(){ btn.textContent = txt; }, 2000);
+}
+
+function bajarExcel(){
+  var f = '<meta charset="utf-8"><table border="1"><tr>'+
+    '<th colspan="5" style="font-size:14pt">INSUMOS '+nomLugar(lugar).toUpperCase()+' — '+nomMes(mesAct)+'</th></tr>'+
+    '<tr><th>Categoría</th><th>Insumo</th><th>Máximo</th><th>Actual</th><th>Pedido</th></tr>';
+  CATS.forEach(function(c){
+    activos().filter(function(i){return i.c === c}).forEach(function(it){
+      var a = actual(it.n);
+      f += "<tr><td>"+CAT_NOM[c]+"</td><td>"+it.n+"</td><td>"+it.max+"</td><td>"+
+           (a===null?"":a)+"</td><td>"+pedidoDe(it)+"</td></tr>";
+    });
+  });
+  f += "</table>";
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([f], {type:"application/vnd.ms-excel"}));
+  a.download = "INSUMOS " + nomLugar(lugar) + " " + nomMes(mesAct) + ".xls";
+  a.click();
+}
+
+/* ---------------- Modal ---------------- */
+function abrir(html){
+  document.getElementById("modal").innerHTML = html;
+  document.getElementById("velo").classList.add("on");
+}
+function cerrar(){ document.getElementById("velo").classList.remove("on"); }
+
+/* ---------------- Persistencia (Google Sheets vía Apps Script) ----------------
+   Se guarda SIEMPRE en el dispositivo (instantáneo, aguanta que se corte la red)
+   y además se sube al servidor. Sin botón de guardar: se dispara al tipear, con
+   un respiro de 1,5 s para no mandar en cada tecla. Las subidas se encolan.
+   POST con Content-Type text/plain: así el navegador no hace preflight CORS.    */
+var tDebounce = null;
+
+function guardar(){
+  try{ localStorage.setItem(claveLocal(), JSON.stringify(E)); }catch(e){}
+  if(!EN_LINEA) return;
+  estado("guardando");
+  clearTimeout(tDebounce);
+  tDebounce = setTimeout(subir, 1500);
+}
+
+function subir(){
+  if(!EN_LINEA) return;
+  if(guardando){ pendiente = true; return; }
+  guardando = true; estado("guardando");
+  var lugarAlSubir = lugar, cuerpo = JSON.stringify({lugar: lugarAlSubir, estado: E});
+  var x = new XMLHttpRequest();
+  x.open("POST", APPS_SCRIPT_URL, true);
+  x.setRequestHeader("Content-Type", "text/plain;charset=utf-8");
+  x.timeout = 25000;
+  x.onload  = function(){ guardando = false; estado("ok");    if(pendiente){ pendiente=false; subir(); } };
+  x.onerror = x.ontimeout = function(){ guardando = false; estado("error"); };
+  x.send(cuerpo);
+}
+
+/* Lee el estado de un lugar del servidor. cb(err, estado|null) */
+function leerServidor(id, cb){
+  if(!EN_LINEA) return cb(new Error("sin backend"));
+  var x = new XMLHttpRequest();
+  x.open("GET", APPS_SCRIPT_URL + "?lugar=" + encodeURIComponent(id), true);
+  x.timeout = 25000;
+  x.onload = function(){
+    try{
+      var d = JSON.parse(x.responseText);
+      cb(null, (d && d.items && d.items.length) ? d : null);
+    }catch(e){ cb(e); }
+  };
+  x.onerror = x.ontimeout = function(){ cb(new Error("sin conexión")); };
+  x.send();
+}
+
+/* Al volver a esta pantalla se relee el servidor, por si se cargó desde otro
+   dispositivo. Seguro: lo de acá ya se guardó al tipear.                        */
+document.addEventListener("visibilitychange", function(){
+  if(!EN_LINEA) return;
+  if(document.visibilityState === "hidden"){
+    if(tDebounce){ clearTimeout(tDebounce); tDebounce = null; subir(); }
+    return;
+  }
+  if(guardando || pendiente) return;
+  leerServidor(lugar, function(err, res){
+    if(err || !res) return;
+    if(JSON.stringify(res) === JSON.stringify(E)) return;
+    E = res;
+    if(E.meses.indexOf(mesAct) < 0) mesAct = E.meses[E.meses.length-1];
+    pintarMeses(); pintar(); pintarHist();
+    estado("recargado");
+  });
+});
+
+/* Indicador discreto de guardado, en el pie */
+function estado(s){
+  var e = document.getElementById("guardado");
+  if(!e) return;
+  if(s === "guardando"){ e.textContent = "guardando…"; e.style.color = "#9ca3af"; }
+  if(s === "cargando"){ e.textContent = "cargando…"; e.style.color = "#9ca3af"; }
+  if(s === "ok"){ e.textContent = "✓ guardado"; e.style.color = "#0F7A3D"; }
+  if(s === "error"){ e.textContent = "⚠ sin conexión — guardado en este equipo"; e.style.color = "#b45309"; }
+  if(s === "recargado"){ e.textContent = "↻ actualizado"; e.style.color = "#0F7A3D"; }
+}
+</script>
+</body>
+</html>
