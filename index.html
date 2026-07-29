@@ -284,6 +284,7 @@ tr.pide .c-nom{font-weight:600}
     <button class="tab on" data-v="ped">PEDIDO</button>
     <button class="tab" data-v="hist">HISTORIAL</button>
     <button class="tab" data-v="compras" id="tabCompras" style="display:none">COMPRAS</button>
+    <button class="tab" data-v="gasto" id="tabGasto" style="display:none">GASTO</button>
   </div>
 </header>
 
@@ -330,6 +331,20 @@ tr.pide .c-nom{font-weight:600}
       Es la lista con la que Administración compra. Tocá <b>Copiar</b> en cada proveedor.
     </div>
     <div id="comprasBody"></div>
+    <div style="height:24px"></div>
+  </section>
+
+  <!-- ============ GASTO en plata (para Administración) ============ -->
+  <section class="vista" id="vGasto">
+    <div class="h-intro">
+      Cuánto <b>gasta cada sucursal en plata</b> = lo que pide × el precio de cada insumo.
+      Ejemplo: azúcar $1.000, pidió 3 → $3.000. Cargá los precios con el botón de abajo.
+    </div>
+    <div class="acciones" style="margin-top:0">
+      <button class="btn2" onclick="abrirPrecios()">✏️ Editar precios</button>
+      <button class="btn2" onclick="excelGasto()">Descargar Excel</button>
+    </div>
+    <div id="gastoBody"></div>
     <div style="height:24px"></div>
   </section>
 </main>
@@ -546,19 +561,29 @@ function arrancar(){
   pintarHist();
   document.querySelectorAll(".tab").forEach(function(t){
     t.onclick = function(){
-      document.querySelectorAll(".tab").forEach(function(x){x.classList.remove("on")});
-      t.classList.add("on");
-      var v = t.dataset.v;
-      document.getElementById("vPed").classList.toggle("on", v === "ped");
-      document.getElementById("vHist").classList.toggle("on", v === "hist");
-      document.getElementById("vCompras").classList.toggle("on", v === "compras");
-      document.getElementById("pie").style.display = v === "ped" ? "flex" : "none";
-      if(v === "hist") pintarHist();
-      if(v === "compras") pintarCompras();
+      // GASTO es solo de Administración: pide su clave la primera vez
+      if(t.dataset.v === "gasto" && !esAdmin()){
+        return pedirClaveAdmin(function(){ activarTab(t); });
+      }
+      activarTab(t);
     };
   });
-  // COMPRAS (consolidado de las 8 bocas) siempre disponible: lo usa Administración
   document.getElementById("tabCompras").style.display = EN_LINEA ? "" : "none";
+  document.getElementById("tabGasto").style.display = EN_LINEA ? "" : "none";
+}
+
+function activarTab(t){
+  document.querySelectorAll(".tab").forEach(function(x){x.classList.remove("on")});
+  t.classList.add("on");
+  var v = t.dataset.v;
+  document.getElementById("vPed").classList.toggle("on", v === "ped");
+  document.getElementById("vHist").classList.toggle("on", v === "hist");
+  document.getElementById("vCompras").classList.toggle("on", v === "compras");
+  document.getElementById("vGasto").classList.toggle("on", v === "gasto");
+  document.getElementById("pie").style.display = v === "ped" ? "flex" : "none";
+  if(v === "hist") pintarHist();
+  if(v === "compras") pintarCompras();
+  if(v === "gasto") pintarGasto();
 }
 
 /* ---------------- Utilidades ---------------- */
@@ -1014,6 +1039,228 @@ function excelCompras(cat){
   a.href = URL.createObjectURL(new Blob([f], {type:"application/vnd.ms-excel"}));
   a.download = "COMPRA " + CAT_NOM[cat] + ".xls";
   a.click();
+}
+
+/* ================= GASTO EN PLATA (solo Administración) =================
+   Cuánto gasta cada sucursal = lo que pide x el precio del insumo.
+   Ej: azúcar $1.000, pidió 3 -> $3.000.
+   Los precios los carga y modifica Administración (cambian seguido), y se
+   guardan en el servidor bajo el lugar especial "precios", así los ve
+   cualquier dispositivo. Las sucursales NO ven esta pestaña.               */
+
+var ADMIN_HASH = "7b1cb4ca0d087293a21283b483971d2c9978870fe51ee7c145248ed417055729";
+var ADMIN_MARCA = "insumos_admin_ok";
+var CLAVE_PRECIOS = "precios";        // fila propia en la planilla
+var PRECIOS = null;                   // {insumo: precio}
+
+function esAdmin(){
+  try{ return sessionStorage.getItem(ADMIN_MARCA) === "1"; }catch(e){ return false; }
+}
+
+function pedirClaveAdmin(luegoOk){
+  abrir('<h3>Solo Administración</h3>'+
+    '<p>El gasto en plata es solo para Administración. Ingresá la clave.</p>'+
+    '<form id="admForm"><div class="campo">'+
+      '<input id="admInp" type="password" placeholder="Clave de Administración" autocomplete="current-password">'+
+    '</div><div id="admErr" style="color:#E30613;font-size:12.5px;min-height:16px"></div>'+
+    '<div class="modal-f"><button class="btn" type="submit">Entrar</button>'+
+    '<button class="btn2" type="button" onclick="cerrar()">Cancelar</button></div></form>');
+  var inp = document.getElementById("admInp");
+  setTimeout(function(){ inp.focus(); }, 80);
+  document.getElementById("admForm").onsubmit = async function(ev){
+    ev.preventDefault();
+    try{
+      if(await sha256(inp.value.trim()) === ADMIN_HASH){
+        try{ sessionStorage.setItem(ADMIN_MARCA, "1"); }catch(e){}
+        cerrar(); luegoOk();
+      } else {
+        document.getElementById("admErr").textContent = "Clave incorrecta.";
+        inp.value = ""; inp.focus();
+      }
+    }catch(e){ document.getElementById("admErr").textContent = "No se pudo validar."; }
+  };
+}
+
+function plata(n){
+  return "$" + Math.round(n).toLocaleString("es-AR");
+}
+
+/* Lee los precios del servidor (fila "precios") */
+function traerPrecios(cb){
+  if(PRECIOS) return cb(PRECIOS);
+  if(!EN_LINEA){ PRECIOS = {}; return cb(PRECIOS); }
+  var x = new XMLHttpRequest();
+  x.open("GET", APPS_SCRIPT_URL + "?lugar=" + CLAVE_PRECIOS, true);
+  x.timeout = 25000;
+  x.onload = function(){
+    try{ var d = JSON.parse(x.responseText); PRECIOS = (d && d.precios) ? d.precios : {}; }
+    catch(e){ PRECIOS = {}; }
+    cb(PRECIOS);
+  };
+  x.onerror = x.ontimeout = function(){ PRECIOS = {}; cb(PRECIOS); };
+  x.send();
+}
+
+function guardarPrecios(cb){
+  if(!EN_LINEA) return cb && cb();
+  var x = new XMLHttpRequest();
+  x.open("POST", APPS_SCRIPT_URL, true);
+  x.setRequestHeader("Content-Type", "text/plain;charset=utf-8");
+  x.timeout = 25000;
+  x.onload = x.onerror = x.ontimeout = function(){ cb && cb(); };
+  // el backend guarda {items:[]} para que no lo confunda con una boca
+  x.send(JSON.stringify({lugar: CLAVE_PRECIOS, estado: {precios: PRECIOS, items: [], meses: []}}));
+}
+
+/* Gasto de una boca en un mes: suma pedido x precio */
+function gastoDe(est, mes){
+  var t = 0;
+  if(!est) return 0;
+  est.items.forEach(function(it){
+    if(!it.activo) return;
+    var p = +PRECIOS[it.n] || 0;
+    if(!p) return;
+    t += pedidoEn(est, mes, it.n, it.max) * p;
+  });
+  return t;
+}
+
+function pintarGasto(){
+  var cont = document.getElementById("gastoBody");
+  cont.innerHTML = '<div style="padding:24px;text-align:center;color:#9ca3af">Calculando…</div>';
+  traerPrecios(function(){
+    juntarBocas(function(bocas){
+      comprasCache = bocas;
+      var conPrecio = Object.keys(PRECIOS).filter(function(k){ return +PRECIOS[k] > 0; }).length;
+
+      // gasto del mes que está viendo + acumulado de todos los meses de cada boca
+      var filas = bocas.map(function(b){
+        var mesG = 0, anual = 0, meses = 0;
+        if(b.estado){
+          mesG = b.estado.meses.indexOf(mesAct) >= 0 ? gastoDe(b.estado, mesAct) : 0;
+          b.estado.meses.forEach(function(m){ var g = gastoDe(b.estado, m); anual += g; if(g>0) meses++; });
+        }
+        return {n:b.n, mes:mesG, anual:anual, meses:meses, cargo:!!b.estado};
+      }).sort(function(a,b){ return b.anual - a.anual || b.mes - a.mes; });
+
+      var totMes = filas.reduce(function(s,f){ return s+f.mes; }, 0);
+      var totAnual = filas.reduce(function(s,f){ return s+f.anual; }, 0);
+      var tope = Math.max.apply(null, filas.map(function(f){ return f.anual; }).concat([1]));
+
+      var html = "";
+      if(!conPrecio){
+        html += '<div class="aviso" style="border-radius:10px;margin-bottom:12px">'+
+          '<span>Todavía no hay precios cargados. Tocá <b>Editar precios</b> para empezar: '+
+          'sin precios no se puede calcular la plata.</span></div>';
+      } else {
+        html += '<div class="h-intro" style="display:flex;gap:18px;flex-wrap:wrap">'+
+          '<span>Precios cargados: <b>'+conPrecio+'</b></span>'+
+          '<span>Gasto de '+nomMes(mesAct)+': <b>'+plata(totMes)+'</b></span>'+
+          '<span>Acumulado: <b>'+plata(totAnual)+'</b></span></div>';
+      }
+
+      html += '<div class="cat"><div class="cat-hd"><h2>RANKING POR SUCURSAL</h2>'+
+        '<span>de mayor a menor</span></div>'+
+        '<table><thead><tr><th>Sucursal</th><th style="width:26%">'+nomMes(mesAct)+'</th>'+
+        '<th style="width:26%">Acumulado</th></tr></thead><tbody>';
+      filas.forEach(function(f, i){
+        var pct = Math.round(f.anual / tope * 100);
+        html += '<tr'+(f.cargo?"":' style="opacity:.45"')+'>'+
+          '<td class="c-nom"><b>'+(i+1)+'.</b> '+f.n+
+            '<div style="height:4px;background:#f1f2f4;border-radius:2px;margin-top:4px">'+
+            '<div style="height:4px;width:'+pct+'%;background:var(--rojo);border-radius:2px"></div></div>'+
+            '<span style="font-size:10.5px;color:#9ca3af">'+
+            (f.cargo ? f.meses+" mes(es) con gasto" : "sin cargar")+'</span></td>'+
+          '<td style="text-align:right;font-weight:700">'+plata(f.mes)+'</td>'+
+          '<td style="text-align:right;font-weight:800;color:var(--rojo)">'+plata(f.anual)+'</td></tr>';
+      });
+      html += '<tr><td class="c-nom"><b>TOTAL</b></td>'+
+        '<td style="text-align:right;font-weight:800">'+plata(totMes)+'</td>'+
+        '<td style="text-align:right;font-weight:800">'+plata(totAnual)+'</td></tr>';
+      html += '</tbody></table></div>';
+
+      cont.innerHTML = html;
+    });
+  });
+}
+
+/* Pantalla de precios: Administración carga y modifica. Se guarda al salir. */
+function abrirPrecios(){
+  traerPrecios(function(){
+    var its = E.items.slice().sort(function(a,b){
+      return a.c === b.c ? (a.n < b.n ? -1 : 1) : (CATS.indexOf(a.c) - CATS.indexOf(b.c));
+    });
+    var filas = "", catAct = "";
+    its.forEach(function(it){
+      if(it.c !== catAct){
+        catAct = it.c;
+        filas += '<tr><td colspan="2" style="background:#fafafa;font-size:11px;font-weight:800;'+
+                 'letter-spacing:.08em;color:var(--rojo);padding:6px 8px">'+CAT_NOM[it.c]+'</td></tr>';
+      }
+      var p = +PRECIOS[it.n] || "";
+      filas += '<tr><td class="c-nom">'+it.n+'</td>'+
+        '<td style="width:110px"><input class="inp" type="number" inputmode="decimal" min="0" step="0.01" '+
+        'placeholder="$" value="'+p+'" oninput="setPrecio(\''+
+        it.n.replace(/'/g,"\\'")+'\', this.value)"></td></tr>';
+    });
+    abrir('<h3>Precios de los insumos</h3>'+
+      '<p>El precio unitario de cada uno. Se usa para calcular el gasto de cada sucursal '+
+      '(ej: azúcar $1.000 × 3 pedidas = $3.000). Podés cambiarlos cuando quieras.</p>'+
+      '<div style="max-height:52vh;overflow:auto;border:1px solid var(--linea);border-radius:8px">'+
+      '<table class="hist-t">'+filas+'</table></div>'+
+      '<div class="modal-f"><button class="btn" onclick="cerrarPrecios(this)">Guardar precios</button>'+
+      '<button class="btn2" onclick="cerrar()">Cerrar</button></div>');
+  });
+}
+
+function setPrecio(nombre, v){
+  if(!PRECIOS) PRECIOS = {};
+  if(v === "" || +v <= 0) delete PRECIOS[nombre];
+  else PRECIOS[nombre] = +v;
+}
+
+function cerrarPrecios(btn){
+  btn.disabled = true; btn.textContent = "Guardando…";
+  guardarPrecios(function(){
+    cerrar();
+    pintarGasto();
+  });
+}
+
+/* Excel del ranking de gasto */
+function excelGasto(){
+  if(!esAdmin()) return pedirClaveAdmin(function(){ excelGasto(); });
+  traerPrecios(function(){
+    juntarBocas(function(bocas){
+      comprasCache = bocas;
+      // detalle: insumo x boca en plata, del mes actual
+      var f = '<meta charset="utf-8"><table border="1">'+
+        '<tr><th colspan="4" style="font-size:14pt">GASTO EN INSUMOS — '+nomMes(mesAct)+'</th></tr>'+
+        '<tr><th>Sucursal</th><th>Gasto '+nomMes(mesAct)+'</th><th>Acumulado</th><th>Meses con gasto</th></tr>';
+      var filas = bocas.map(function(b){
+        var mesG = 0, anual = 0, meses = 0;
+        if(b.estado){
+          mesG = b.estado.meses.indexOf(mesAct) >= 0 ? gastoDe(b.estado, mesAct) : 0;
+          b.estado.meses.forEach(function(m){ var g = gastoDe(b.estado, m); anual += g; if(g>0) meses++; });
+        }
+        return {n:b.n, mes:mesG, anual:anual, meses:meses};
+      }).sort(function(a,b){ return b.anual - a.anual; });
+      filas.forEach(function(r){
+        f += '<tr><td>'+r.n+'</td><td>'+Math.round(r.mes)+'</td><td>'+Math.round(r.anual)+
+             '</td><td>'+r.meses+'</td></tr>';
+      });
+      f += '<tr><td><b>TOTAL</b></td><td><b>'+Math.round(filas.reduce(function(s,r){return s+r.mes},0))+
+           '</b></td><td><b>'+Math.round(filas.reduce(function(s,r){return s+r.anual},0))+'</b></td><td></td></tr>';
+      f += '</table><br><table border="1"><tr><th colspan="2" style="font-size:12pt">PRECIOS USADOS</th></tr>'+
+           '<tr><th>Insumo</th><th>Precio</th></tr>';
+      Object.keys(PRECIOS).sort().forEach(function(n){ f += '<tr><td>'+n+'</td><td>'+PRECIOS[n]+'</td></tr>'; });
+      f += '</table>';
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([f], {type:"application/vnd.ms-excel"}));
+      a.download = "GASTO INSUMOS " + nomMes(mesAct) + ".xls";
+      a.click();
+    });
+  });
 }
 
 /* ---------------- Salida ----------------
