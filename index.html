@@ -898,8 +898,11 @@ function pintarCompras(){
           '<td style="font-size:12px;color:#6b7280">'+det+'</td></tr>';
       });
       html += '</tbody></table>'+
-        '<button class="btn" style="margin:10px 12px" onclick="copiarCompras(\''+c+'\')">'+
-        'Copiar '+CAT_NOM[c]+' para WhatsApp</button></div>';
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 12px">'+
+          '<button class="btn" onclick="copiarCompras(\''+c+'\')">'+
+          'Copiar '+CAT_NOM[c]+' para WhatsApp</button>'+
+          '<button class="btn2" onclick="excelCompras(\''+c+'\')">Descargar Excel</button>'+
+        '</div></div>';
     });
 
     if(!Object.keys(porItem).length)
@@ -962,6 +965,55 @@ function copiarCompras(cat){
   var prev = b.textContent;
   b.textContent = ok ? "✓ Copiado" : "Copialo a mano";
   setTimeout(function(){ b.textContent = prev; }, 2000);
+}
+
+/* Excel del consolidado de UN proveedor: una columna por boca + total.
+   Es la planilla con la que Administración compra ese proveedor.            */
+function excelCompras(cat){
+  if(!comprasCache) return;
+  // qué bocas participan en esta categoría, y el pedido por insumo/boca
+  var bocas = comprasCache.filter(function(b){ return b.estado; });
+  var porItem = {};   // nombre -> {porBoca:{id:q}, total}
+  bocas.forEach(function(b){
+    b.estado.items.forEach(function(it){
+      if(!it.activo || it.c !== cat) return;
+      var q = pedidoEn(b.estado, b.mes, it.n, it.max);
+      if(q <= 0) return;
+      if(!porItem[it.n]) porItem[it.n] = {porBoca:{}, total:0};
+      porItem[it.n].porBoca[b.id] = q;
+      porItem[it.n].total += q;
+    });
+  });
+  var nombres = Object.keys(porItem).sort(function(a,b){ return porItem[b].total - porItem[a].total; });
+  if(!nombres.length) return alert("No hay nada para comprar en " + CAT_NOM[cat] + ".");
+  // solo las bocas que aportaron algo en esta categoría
+  var cols = bocas.filter(function(b){
+    return nombres.some(function(n){ return porItem[n].porBoca[b.id]; });
+  });
+
+  var f = '<meta charset="utf-8"><table border="1"><tr>'+
+    '<th colspan="'+(cols.length+2)+'" style="font-size:14pt">COMPRA '+CAT_NOM[cat]+
+    ' — TODAS LAS BOCAS</th></tr><tr><th>Insumo</th>';
+  cols.forEach(function(b){ f += '<th>'+b.n+'</th>'; });
+  f += '<th>TOTAL</th></tr>';
+  nombres.forEach(function(n){
+    f += '<tr><td>'+n+'</td>';
+    cols.forEach(function(b){ f += '<td>'+(porItem[n].porBoca[b.id] || "")+'</td>'; });
+    f += '<td><b>'+porItem[n].total+'</b></td></tr>';
+  });
+  // fila de totales por boca
+  f += '<tr><td><b>TOTAL</b></td>';
+  var granTotal = 0;
+  cols.forEach(function(b){
+    var s = nombres.reduce(function(a,n){ return a + (porItem[n].porBoca[b.id] || 0); }, 0);
+    granTotal += s; f += '<td><b>'+s+'</b></td>';
+  });
+  f += '<td><b>'+granTotal+'</b></td></tr></table>';
+
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([f], {type:"application/vnd.ms-excel"}));
+  a.download = "COMPRA " + CAT_NOM[cat] + ".xls";
+  a.click();
 }
 
 /* ---------------- Salida ----------------
