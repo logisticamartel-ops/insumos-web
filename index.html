@@ -303,7 +303,8 @@ tr.pide .c-nom{font-weight:600}
       <button class="btn2" onclick="nuevoMes()">+ Nuevo mes</button>
       <button class="btn2" onclick="vaciarMes()">Empezar de nuevo</button>
       <button class="btn2 peligro" onclick="borrarMes()">Borrar este mes</button>
-      <button class="btn2" id="btnBajas" onclick="verBajas()"></button>
+      <button class="btn2" id="btnBajas" onclick="verBajas()" style="display:none"></button>
+      <button class="btn2" onclick="salir()" title="Cierra la sesión en este dispositivo">Salir</button>
     </div>
   </section>
 
@@ -432,6 +433,17 @@ function yaEntro(){
   try{ return localStorage.getItem(CLAVE_MARCA) === "1"; }catch(e){ return false; }
 }
 
+/* Cierra la sesión en este dispositivo: vuelve a pedir la clave.
+   Los pedidos NO se borran (están en el servidor). */
+function salir(){
+  if(!confirm("¿Salir?\n\nVa a pedir la clave de nuevo en este dispositivo.\nLos pedidos no se borran.")) return;
+  try{
+    localStorage.removeItem(CLAVE_MARCA);
+    sessionStorage.removeItem(ADMIN_MARCA);
+  }catch(e){}
+  location.reload();
+}
+
 function pedirClave(){
   document.getElementById("gate").style.display = "flex";
   var inp = document.getElementById("gateInp");
@@ -470,7 +482,10 @@ function arrancarApp(){
   cargar();
 }
 
-/* Carga (o recarga) el estado del lugar actual */
+/* Carga (o recarga) el estado del lugar actual.
+   Pinta YA con lo que hay en el dispositivo (o la precarga) y recién después
+   pisa con lo del servidor. Sin esto la pantalla quedaba en blanco varios
+   segundos esperando a Google, y parecía colgada.                            */
 function cargar(){
   var av = document.getElementById("avisoLocal");
   if(av) av.style.display = "none";
@@ -486,13 +501,29 @@ function cargar(){
     return usar(null, local);
   }
 
+  // 1) mostrar algo al instante
+  E = local || (lugar === "deposito" ? desdePrecarga() : catalogoNuevo());
+  arrancar();
   estado("cargando");
-  leerServidor(lugar, function(err, res){
+
+  // 2) traer lo del servidor y actualizar si difiere
+  var idPedido = lugar;
+  leerServidor(idPedido, function(err, res){
+    if(idPedido !== lugar) return;          // cambió de boca mientras cargaba
     if(err){
       modoLocal("No se pudo conectar. Seguí cargando: se guarda acá y sube cuando vuelva.");
-      usar(null, local);
+      estado("error");
+      return;
+    }
+    if(res && res.items && res.items.length){
+      if(JSON.stringify(res) !== JSON.stringify(E)){
+        E = res;
+        if(E.meses.indexOf(mesAct) < 0) mesAct = E.meses[E.meses.length-1];
+        pintarMeses(); pintar(); pintarHist();
+      }
+      estado("ok");
     } else {
-      usar(res, local);      // lo del servidor manda; si viene vacío, subimos el nuestro
+      subir();                               // el servidor no tenía nada: subimos lo nuestro
     }
   });
 }
