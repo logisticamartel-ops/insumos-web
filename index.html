@@ -45,6 +45,11 @@ header{
   background:#2b3038;color:#fff;border:1px solid #3f454e;border-radius:7px;
   padding:7px 9px;font-size:14px;font-weight:600;font-family:inherit;
 }
+/* El lugar cuando lo fija la clave: mismo look que el selector, pero es texto */
+#lugarFijo{
+  background:#2b3038;color:#fff;border:1px solid #3f454e;border-radius:7px;
+  padding:7px 9px;font-size:14px;font-weight:700;letter-spacing:.03em;white-space:nowrap;
+}
 .tabs{display:flex; gap:4px; margin-top:10px}
 .tab{
   flex:1; padding:8px 6px; text-align:center; font-size:13px; font-weight:600;
@@ -168,6 +173,7 @@ tr.pide .c-nom{font-weight:600}
 .chip{font-size:11.5px; padding:3px 9px; border-radius:20px; white-space:nowrap}
 .chip.si{background:var(--verde-suave); color:var(--verde)}
 .chip.no{background:#f4f5f7; color:#9ca3af}
+.chip.ojo{background:var(--ambar-suave); color:var(--ambar); font-weight:600}
 .hist-t{width:100%; background:var(--papel); border-radius:10px; overflow:hidden;
         box-shadow:0 1px 3px rgba(16,24,40,.07)}
 .hist-t td{font-size:13px}
@@ -266,7 +272,7 @@ tr.pide .c-nom{font-weight:600}
   <form id="gateForm" class="gate-card">
     <div class="gate-lock">🔒</div>
     <div class="gate-tit">INSUMOS MARTEL</div>
-    <div class="gate-sub">Ingresá la clave para entrar.</div>
+    <div class="gate-sub">Cada sucursal tiene su clave.<br>La que pongas define de quién es el pedido.</div>
     <input id="gateInp" type="password" autocomplete="current-password" placeholder="Clave" autofocus>
     <div id="gateErr" class="gate-err"></div>
     <button type="submit" class="gate-btn">Entrar</button>
@@ -277,7 +283,8 @@ tr.pide .c-nom{font-weight:600}
   <div class="hd-top">
     <div class="logo">M</div>
     <div class="hd-tit">INSUMOS<small id="subTit">—</small></div>
-    <select id="selLugar" aria-label="Lugar"></select>
+    <span id="lugarFijo" aria-label="Lugar"></span>
+    <select id="selLugar" aria-label="Lugar" style="display:none"></select>
     <select id="selMes" aria-label="Mes"></select>
   </div>
   <div class="tabs">
@@ -291,6 +298,8 @@ tr.pide .c-nom{font-weight:600}
 <div class="aviso" id="avisoLocal" style="display:none">
   <span><b>Modo local:</b> se guarda solo en este dispositivo.</span>
 </div>
+
+<div class="aviso" id="avisoMes" style="display:none"><span></span></div>
 
 <main>
   <div id="tituloImp"></div>
@@ -410,17 +419,132 @@ var MESES_NOM = ["enero","febrero","marzo","abril","mayo","junio",
 var CATS = ["CAFETERIA","LIBRERIA","LIMPIEZA"];
 var CAT_NOM = {CAFETERIA:"CAFETERÍA", LIBRERIA:"LIBRERÍA", LIMPIEZA:"LIMPIEZA"};
 
+/* ---------------- Sector de un insumo, y que insumos son fijos ----------------
+   Pedido de Hernan (08/09/2026): que la CAFETERIA quede fija y que no se pueda
+   cargar un articulo de limpieza dentro de cafeteria.
+
+   Las palabras salen del relevamiento de las 8 bocas reales (70 nombres distintos:
+   10 en cafeteria, 26 en libreria, 34 en limpieza), no de una lista inventada. Solo
+   entran palabras que aparecen en UNA sola categoria.
+
+   🔴 Lo que NO se puede usar para decidir, porque es ambiguo en los datos de verdad:
+     - "papel": `PAPEL HIG X 80 X 4 UN` es CAFETERIA y `PAPEL HIGIENICO X 80 X 4 UN`
+       es LIMPIEZA. Las dos existen en las 8 bocas.
+     - "rollo": hay rollos en las tres (de cocina, de numeros, de bolsas).
+     - "bobina" / "cinta": bobina es limpieza salvo en Arenales, donde `BOINA DE PAPEL
+       INDUSTRIAL` quedo en cafeteria; cinta es libreria.
+   Por eso el validador es CONSERVADOR: si no puede clasificar con confianza, DEJA
+   PASAR. Trabar a una boca por un falso positivo es peor que no avisar.            */
+var SECTOR_PALABRAS = {
+  CAFETERIA: ["AZUCAR","CAFE","YERBA","MATE","EDULCORANTE","ENDULZANTE","GALLETITA",
+              "LECHE","SERVILLETA","SAQUITO","TE","CAFE MOLIDO","PAPEL HIG","PAPEL HIGIENICO"],
+  LIBRERIA:  ["LAPICERA","BIROME","BOLIGRAFO","MARCADOR","BROCHE","CORRECTOR","CLIP",
+              "FOLIO","ABROCHADORA","ENGRAMPADORA","TINTA","PLASTICOLA","BOLIGOMA",
+              "RESALTADOR","REGLA","TIJERA","CUADERNO","SELLO","ALMOHADILLA","SOBRE",
+              "SCOTCH","STIKO","GOMA DE BORRAR","LAPIZ","SACAPUNTAS","CARPETA"],
+  LIMPIEZA:  ["LAVANDINA","DETERGENTE","ESCOBILLON","ESCOBA","TRAPO","REJILLA","ESPONJA",
+              "CIF","BLEM","LUSTRA","DESODORANTE","POMADA","PLUMERO","RAID","ESCURRIDOR",
+              "ARAGAN","GUANTES","VIRULANA","LIMPIADOR","JABON","SECADOR","BALDE",
+              "FRANELA","INSECTICIDA","CERA","MOPA","LAMPAZO","DESINFECTANTE","PALA",
+              "PALO PARA","BOLSAS DE RESIDUOS"]
+};
+
+/* A que sector apunta un nombre. Devuelve null si no esta claro (0 o mas de 1). */
+function sectorDe(nombre){
+  var n = " " + String(nombre).toUpperCase() + " ";
+  var pegan = CATS.filter(function(c){
+    return SECTOR_PALABRAS[c].some(function(p){
+      // palabra completa: evita que "TE" pegue dentro de "DETERGENTE"
+      var i = n.indexOf(p);
+      if(i < 0) return false;
+      var antes = n.charAt(i - 1), despues = n.charAt(i + p.length);
+      return !/[A-ZÁÉÍÓÚÑ]/.test(antes) && !/[A-ZÁÉÍÓÚÑ]/.test(despues);
+    });
+  });
+  return pegan.length === 1 ? pegan[0] : null;
+}
+
+/* Los insumos que NO se pueden dar de baja, los pida quien los pida. Pedido de Hernan
+   (08/09/2026): "que esos seis queden fijos".
+   Va por NOMBRE y no por categoria, porque el papel higienico es fijo Y vive en
+   LIMPIEZA: atarlo a la categoria lo dejaba sin proteccion al moverlo.
+   Son prefijos, no nombres exactos, porque cada boca tiene su variante -- Arenales
+   `ROLLO DE COCINA (PQT POR 3UN)`, el Deposito `ROLLO DE PAPEL PARA COCINA X 3UNID.`,
+   Administracion `TE X 50 SAQ` -- y una lista de nombres exactos se les escapaba.
+   Verificado contra los 70 nombres reales de las 8 bocas: protege 10 (los seis de la
+   casa con todas sus variantes) y no toca ninguno de los otros 60. Ojo con los que
+   NO tienen que quedar protegidos y empiezan parecido: `ROLLO DE BOLSAS PLASTICAS`,
+   `ROLLO PIOLIN`, `BOBINA DE PAPEL`, `BOINA DE PAPEL INDUSTRIAL`.               */
+var FIJOS = ["AZUCAR", "CAFE", "MATE COCIDO", "TE",
+             "PAPEL HIG", "PAPEL HIGIENICO",   // las dos grafias que hay en las bocas
+             "ROLLO DE PAPEL", "ROLLO DE COCINA"];
+function esFijo(it){
+  var n = String(it.n).toUpperCase();
+  return FIJOS.some(function(p){
+    if(n.indexOf(p) !== 0) return false;
+    var sig = n.charAt(p.length);
+    return sig === "" || !/[A-ZÁÉÍÓÚÑ]/.test(sig);      // prefijo de palabra completa
+  });
+}
+
+
 /* ---- Estado ---- */
 var E = null;      // {items:[{n,c,max,activo}], conteos:{mes:{insumo:actual}}, meses:[]}
 var mesAct = "";
-var guardando = false, pendiente = false;
+var guardando = false, pendiente = null;   // pendiente = {lugar, cuerpo} congelado
+/* Se logro LEER la fila de esta boca del servidor al menos una vez en esta carga.
+   Mientras sea false no se POSTea nada: sin haber confirmado la fila, subir el cache
+   local entero pisa lo que haya hecho otra persona desde otro dispositivo. Se prefiere
+   avisar "no se guardo en la planilla" antes que pisar en silencio.               */
+var confirmado = false;
+/* Sello (version) de la fila de esta boca tal como se leyo del servidor. Se manda
+   como `base` en cada escritura para que el backend no deje pisar lo que escribio
+   otro dispositivo. null = no hay base y la escritura va incondicional (como antes).
+   Lo actualiza la respuesta de cada POST: sin eso, el POST siguiente choca contra su
+   propia escritura anterior y la app deja de guardar.                            */
+var baseTs = null;
 
-/* ---------------- Clave de acceso ----------------
-   Una sola clave para entrar (como el "Acceso de gerencia" de combustible).
-   Se guarda ENCRIPTADA (hash SHA-256), no en texto plano: ni leyendo el código
-   público se ve la clave. Al entrar bien, queda recordado en el dispositivo.   */
-var CLAVE_HASH = "a0e16f1b5f56f8f1f5f0a889a18ad194489729be1e41ece0dd36063754355fed";
-var CLAVE_MARCA = "insumos_acceso_ok";
+/* ---------------- Clave de acceso, una por lugar ----------------
+   Cada boca tiene SU clave y LA CLAVE DECIDE EL LUGAR: no hay selector, asi que
+   nadie puede guardar en la fila de otra boca. `compras` habilita COMPRAS y GASTO;
+   `todo` habilita ademas el selector de lugar (esa es la de Logistica).
+
+   Por que existe esto: hasta el 08/09/2026 habia UNA sola clave y un <select> con
+   las 8 bocas, y el default era Deposito. Quien no cambiaba el selector guardaba su
+   conteo en la fila del Deposito -- el mail del 03/09 decia "Deposito" y el pedido
+   era de otra boca.
+
+   Ojo con lo que esto SI y NO hace. Las claves van como hash SHA-256, asi que no
+   estan en texto plano; pero el repo del frontend es PUBLICO, los hashes viajan en
+   este archivo y las claves se reparten por WhatsApp: NO blindan contra alguien
+   decidido, y el endpoint del Apps Script ademas acepta cualquier POST. Lo que esto
+   evita es guardar en la fila de otra boca SIN QUERER, que es el problema que hubo.
+                                                                                 */
+var CLAVES = {
+  "1fc4b1d2e983f18f256b9daa7dd77e13687b4b97a21e8564994e2a9ffbe28eb3": {lugar:"deposito"},
+  "15dfd8e1ba654723c5b7bacbaa1eaed9b120bc429d28f62e8d2e6f79c89c7065": {lugar:"malvinas"},
+  "0d9b079fa64abb5b23fb3530e766a93f1bdab76caaba68c2d0201184cb67b42f": {lugar:"rioja"},
+  "06b2bc40758b0d37f81c8d03a5ef4e036a4edd88a16eafc5e70144add89f2ddd": {lugar:"chile"},
+  "46db0e088997d97be49d6427e3f368c00b345d4ee8d185ce041a67c445a96195": {lugar:"arenales"},
+  "d7c7226d82ed4c848ebf442f787587932d5265677bf33eecb878644b438d8c35": {lugar:"balcarce"},
+  "3a201addcccc676964cb9d742191b395fa6e214846143fff1c7e0b02023ff939": {lugar:"trescerritos"},
+  "6051fc84a7a0d74c225fb18a496b09952da5642e60723ecae543298edd7d82d6": {lugar:"administracion", compras:true},
+  "e17f4767a0e2d2d46ec691de2e7a02cf55c6d5c40981367e9b27f9bba88f5b19": {lugar:"deposito", compras:true, todo:true},
+};
+
+/* La clave general vieja (insumos2026). NO deja entrar: solo avisa.
+   Se penso como comodin para el dia del cambio, pero es justo la clave que las 8 bocas
+   conocen: dejarla entrar al Deposito reabria el agujero que se esta cerrando -- una boca
+   que la tipea por costumbre termina escribiendo en la fila del Deposito.          */
+var CLAVE_VIEJA = "a0e16f1b5f56f8f1f5f0a889a18ad194489729be1e41ece0dd36063754355fed";
+/* Ya no se escribe: queda solo para BORRAR lo que dejaron las versiones que si
+   persistian la sesion. La de clave unica guardaba "1" en "insumos_acceso_ok".   */
+var CLAVE_MARCA = "insumos_sesion";
+
+/* Quien esta usando la app. Suelto/local (sin gate) puede todo, como antes. */
+var SESION = {lugar:"deposito", compras:true, todo:true};
+function puedeCompras(){ return !!SESION.compras; }
+function puedeTodo(){ return !!SESION.todo; }
 
 async function sha256(txt){
   var data = new TextEncoder().encode(txt);
@@ -429,18 +553,33 @@ async function sha256(txt){
     function(b){ return b.toString(16).padStart(2,"0"); }).join("");
 }
 
-function yaEntro(){
-  try{ return localStorage.getItem(CLAVE_MARCA) === "1"; }catch(e){ return false; }
-}
+/* NO SE GUARDA LA SESION. A proposito.
+   La clave se pide en CADA carga de la pagina, no una vez por dispositivo.
+   Por que: la clave no es un secreto -- viaja por WhatsApp, es adivinable y el hash
+   esta en un repo publico. No esta para que nadie entre: esta para que cada uno
+   DECLARE QUIEN ES antes de escribir. Cachear esa declaracion es justo lo que fallo:
+   en la PC de Casa Central el primero entraba y el que se sentaba despues quedaba
+   declarado como esa misma boca sin que le preguntara nada, y la planilla se escribe
+   AL TIPEAR, no al enviar.
+   Se evaluo `sessionStorage` + vencimiento y se descarto: en la PC del mostrador el
+   navegador no se cierra nunca, asi que no vencia en la practica. Si algun dia
+   molesta, agregarle una gracia corta es un cambio de dos lineas -- pero se arranca
+   estricto y se afloja, no al revés.                                             */
 
-/* Cierra la sesión en este dispositivo: vuelve a pedir la clave.
-   Los pedidos NO se borran (están en el servidor). */
-function salir(){
-  if(!confirm("¿Salir?\n\nVa a pedir la clave de nuevo en este dispositivo.\nLos pedidos no se borran.")) return;
+/* Saca las marcas de sesion de las versiones anteriores, que ya no se leen. */
+function limpiarMarcasViejas(){
   try{
     localStorage.removeItem(CLAVE_MARCA);
+    localStorage.removeItem("insumos_acceso_ok");   // marca de la clave unica vieja
     sessionStorage.removeItem(ADMIN_MARCA);
   }catch(e){}
+}
+
+/* Vuelve a la pantalla de la clave. Sirve para entrar como otra boca sin cerrar el
+   navegador. Los pedidos NO se borran (estan en el servidor y en el cache local). */
+function salir(){
+  if(!confirm("¿Salir?\n\nVa a pedir la clave de nuevo.\nLos pedidos no se borran.")) return;
+  limpiarMarcasViejas();
   location.reload();
 }
 
@@ -453,8 +592,15 @@ function pedirClave(){
     var err = document.getElementById("gateErr");
     try{
       var h = await sha256(inp.value.trim());
-      if(h === CLAVE_HASH){
-        try{ localStorage.setItem(CLAVE_MARCA, "1"); }catch(e){}
+      if(h === CLAVE_VIEJA){
+        err.textContent = "Esa es la clave vieja. Ahora cada sucursal tiene la suya: " +
+                          "pedísela a Logística.";
+        inp.value = ""; inp.focus();
+        return;
+      }
+      var ses = CLAVES[h];
+      if(ses){
+        SESION = ses;          // vive solo en memoria: no se persiste (ver arriba)
         document.getElementById("gate").style.display = "none";
         arrancarApp();
       } else {
@@ -471,13 +617,31 @@ function pedirClave(){
 init();
 
 function init(){
-  // En línea pide la clave una vez por dispositivo; suelto/local no molesta.
-  if(EN_LINEA && !yaEntro() && window.crypto && crypto.subtle) return pedirClave();
-  arrancarApp();
+  limpiarMarcasViejas();
+  // Suelto/local (sin backend configurado) no hay planilla compartida: no molesta.
+  if(!EN_LINEA) return arrancarApp();
+  // Sin SubtleCrypto no se puede validar la clave. Falla CERRADO: antes este camino
+  // saltaba el porton y dejaba entrar con los permisos por defecto (Deposito + todo).
+  if(!window.crypto || !window.crypto.subtle) return sinCrypto();
+  return pedirClave();
 }
 
+/* Navegador sin SubtleCrypto (pasa en contextos no seguros). No se deja entrar. */
+function sinCrypto(){
+  document.getElementById("gate").style.display = "flex";
+  document.getElementById("gateInp").style.display = "none";
+  document.querySelector(".gate-btn").style.display = "none";
+  document.getElementById("gateErr").textContent =
+    "Este navegador no puede validar la clave. Abrila desde el enlace de siempre " +
+    "(https://logisticamartel-ops.github.io/insumos-web/) o probá con Chrome.";
+}
+/* El lugar lo fija LA CLAVE. Solo Logistica (`todo`) puede cambiarlo, y ahi si se
+   recuerda el ultimo elegido.                                                   */
 function arrancarApp(){
-  try{ lugar = localStorage.getItem("insumos_lugar") || "deposito"; }catch(e){}
+  lugar = SESION.lugar;
+  if(puedeTodo()){
+    try{ lugar = localStorage.getItem("insumos_lugar") || lugar; }catch(e){}
+  }
   if(!LUGARES.filter(function(l){ return l.id === lugar; }).length) lugar = "deposito";
   cargar();
 }
@@ -487,6 +651,7 @@ function arrancarApp(){
    pisa con lo del servidor. Sin esto la pantalla quedaba en blanco varios
    segundos esperando a Google, y parecía colgada.                            */
 function cargar(){
+  confirmado = false;                       // hasta no leer la fila, no se escribe
   var av = document.getElementById("avisoLocal");
   if(av) av.style.display = "none";
   var local = null;
@@ -508,13 +673,16 @@ function cargar(){
 
   // 2) traer lo del servidor y actualizar si difiere
   var idPedido = lugar;
-  leerServidor(idPedido, function(err, res){
+  leerServidor(idPedido, function(err, res, sello){
     if(idPedido !== lugar) return;          // cambió de boca mientras cargaba
     if(err){
-      modoLocal("No se pudo conectar. Seguí cargando: se guarda acá y sube cuando vuelva.");
+      modoLocal("No se pudo leer la planilla. Podés contar, queda guardado en este equipo, " +
+                "pero <b>NO se está guardando en la planilla</b>: recargá cuando vuelva internet.");
       estado("error");
       return;
     }
+    confirmado = true;                      // la fila es la del servidor: ya se puede escribir
+    baseTs = sello;                         // y esta es la version que se leyo
     if(res && res.items && res.items.length){
       if(JSON.stringify(res) !== JSON.stringify(E)){
         E = res;
@@ -585,22 +753,19 @@ function arrancar(){
   if(!E.meses.length) E.meses = [mesHoy()];
   if(!E.maxs) E.maxs = {};                        // por si viene de una versión anterior
   if(!E.manual) E.manual = {};
+  if(!E.enviados) E.enviados = {};                // cuando se mando cada mes
   mesAct = E.meses[E.meses.length-1];
   pintarLugares();
   pintarMeses();
   pintar();
   pintarHist();
   document.querySelectorAll(".tab").forEach(function(t){
-    t.onclick = function(){
-      // GASTO es solo de Administración: pide su clave la primera vez
-      if(t.dataset.v === "gasto" && !esAdmin()){
-        return pedirClaveAdmin(function(){ activarTab(t); });
-      }
-      activarTab(t);
-    };
+    t.onclick = function(){ activarTab(t); };
   });
-  document.getElementById("tabCompras").style.display = EN_LINEA ? "" : "none";
-  document.getElementById("tabGasto").style.display = EN_LINEA ? "" : "none";
+  // COMPRAS y GASTO son de Administracion y Logistica: antes las veia cualquiera
+  var verCompras = EN_LINEA && puedeCompras();
+  document.getElementById("tabCompras").style.display = verCompras ? "" : "none";
+  document.getElementById("tabGasto").style.display = verCompras ? "" : "none";
 }
 
 function activarTab(t){
@@ -659,8 +824,19 @@ function esManual(it){
 }
 
 /* ---------------- Pintar el pedido ---------------- */
+/* Sin `todo`, el lugar lo fijo la clave: se muestra como TEXTO y no hay manera de
+   cambiarlo. El selector queda solo para Logistica.                            */
 function pintarLugares(){
   var s = document.getElementById("selLugar");
+  var fijo = document.getElementById("lugarFijo");
+  if(!puedeTodo()){
+    s.style.display = "none";
+    fijo.style.display = "";
+    fijo.textContent = nomLugar(lugar).toUpperCase();
+    return;
+  }
+  fijo.style.display = "none";
+  s.style.display = "";
   s.innerHTML = LUGARES.map(function(l){
     return '<option value="'+l.id+'">'+l.n+'</option>';
   }).join("");
@@ -674,6 +850,7 @@ function cambiarLugar(id){
   if(id === lugar) return;
   if(tDebounce){ clearTimeout(tDebounce); tDebounce = null; subir(); }
   lugar = id;
+  baseTs = null;                    // otra fila, otro sello
   try{ localStorage.setItem("insumos_lugar", lugar); }catch(e){}
   estado("cargando");
   cargar();
@@ -688,8 +865,25 @@ function pintarMeses(){
   s.onchange = function(){ mesAct = this.value; pintar(); };
 }
 
+/* Avisa EN PANTALLA si se esta cargando un mes que no es el de hoy. El cartel de
+   confirmarEnvio() avisa recien al enviar, y la planilla se escribe al tipear: para
+   entonces el mes viejo ya quedo pisado.                                          */
+function pintarAvisoMes(){
+  var a = document.getElementById("avisoMes");
+  if(!a) return;
+  var hoy = mesHoy();
+  if(mesAct === hoy){ a.style.display = "none"; return; }
+  a.querySelector("span").innerHTML = E.meses.indexOf(hoy) < 0
+    ? "<b>⚠ Estás cargando " + nomMes(mesAct) + " y hoy es " + nomMes(hoy) + ".</b> " +
+      "Apretá <b>+ Nuevo mes</b> antes de contar, o vas a pisar el pedido del mes pasado."
+    : "<b>⚠ Estás viendo " + nomMes(mesAct) + ", que no es el mes en curso (" + nomMes(hoy) +
+      ").</b> Lo que edites acá cambia el historial de ese mes.";
+  a.style.display = "flex";
+}
+
 function pintar(){
   document.getElementById("subTit").textContent = nomLugar(lugar) + " · " + nomMes(mesAct);
+  pintarAvisoMes();
   document.getElementById("tituloImp").textContent =
     "INSUMOS " + nomLugar(lugar).toUpperCase() + " — " + nomMes(mesAct);
   var bajas = E.items.length - activos().length;
@@ -719,7 +913,9 @@ function pintar(){
         '<td class="c-ped"><input class="ped'+(esManual(it)?" man":"")+'" type="number" '+
           'inputmode="numeric" min="0" value="'+p+'" oninput="setPed('+i+',this.value)" '+
           'title="'+(esManual(it)?"A mano. Borralo y vuelve a la cuenta ("+calcDe(it)+")":"Sale de la cuenta. Se puede pisar a mano")+'"></td>'+
-        '<td><button class="x" title="Dar de baja" onclick="baja('+i+')">×</button></td></tr>';
+        '<td>' + (puedeCompras() && !esFijo(it)
+          ? '<button class="x" title="Dar de baja" onclick="baja('+i+')">×</button>'
+          : '') + '</td></tr>';
     });
     html += "</tbody></table></div>";
   });
@@ -750,13 +946,17 @@ function setAct(i, v){
 }
 
 /* El máximo se guarda para ESTE mes y queda como vigente para los que vengan */
+/* El MAXIMO del mes que se esta viendo. `it.max` es el maximo VIGENTE del insumo, el
+   que se arrastra al abrir el mes siguiente: solo se toca estando en el mes de hoy.
+   Sin esta guarda, corregir un numero de un mes viejo cambiaba tambien el maximo con
+   el que se pide de ahi en adelante, sin ningun aviso.                          */
 function setMax(i, v){
   var it = E.items[i], n = Math.max(0, +v || 0);
-  maxs()[it.n] = n; it.max = n;
+  maxs()[it.n] = n;
+  if(mesAct === mesHoy()) it.max = n;
   pintar(); guardar();
 }
 
-/* PEDIDO a mano. Vacío = vuelve a la cuenta. Igual a la cuenta = no se guarda como manual. */
 function setPed(i, v){
   var it = E.items[i];
   if(v === "" || +v === calcDe(it)) delete manual()[it.n];
@@ -766,9 +966,19 @@ function setPed(i, v){
   f.className = pedidoDe(it) > 0 ? "pide" : "cero";
   totales(); guardar();
 }
+/* Dar de baja quedo restringido el 08/09/2026 (pedido de Hernan): si una boca saca un
+   insumo, deja de aparecer en su pedido Y en COMPRAS, y Administracion nunca lo compra
+   sin enterarse. Ahora solo Administracion y Logistica pueden, y la CAFETERIA no la
+   puede sacar nadie. Una boca que ya no usa algo le pone PEDIDO en 0.              */
 function baja(i){
   var it = E.items[i];
-  if(!confirm('Dar de baja "'+it.n+'"?\n\nNo se borra el histórico: deja de aparecer en el pedido.')) return;
+  if(esFijo(it))
+    return alert("«" + it.n + "» es fijo.\n\nLa lista de CAFETERÍA la define la casa y no " +
+                 "se puede sacar.\n\nSi no lo necesitás este mes, ponele PEDIDO en 0.");
+  if(!puedeCompras())
+    return alert("Solo Administración puede sacar un insumo de la lista.\n\nSi no lo " +
+                 "necesitás este mes, ponele PEDIDO en 0 y no se pide.");
+  if(!confirm('Dar de baja "' + it.n + '"?\n\nNo se borra el histórico: deja de aparecer en el pedido.')) return;
   it.activo = false; pintar(); guardar();
 }
 
@@ -806,8 +1016,17 @@ function guardarNuevo(){
     } else alert("Ese insumo ya está en la lista.");
     return;
   }
+  var cat = document.getElementById("nvC").value;
+  // Pedido de Hernan: que no se pueda meter un articulo de limpieza en cafeteria.
+  // Solo traba cuando el nombre apunta CLARO a otro sector (ver sectorDe()).
+  var sec = sectorDe(n);
+  if(sec && sec !== cat)
+    return alert("No se puede: «" + n + "» es de " + CAT_NOM[sec] + ", no de " +
+                 CAT_NOM[cat] + ".\n\nCada categoría es un proveedor distinto, así que " +
+                 "el pedido saldría al proveedor equivocado.\n\nCambiá la categoría a " +
+                 CAT_NOM[sec] + " y volvé a intentar.");
   var mx = Math.max(0, +document.getElementById("nvM").value || 0);
-  E.items.push({n:n, c:document.getElementById("nvC").value, max:mx, activo:true});
+  E.items.push({n:n, c:cat, max:mx, activo:true});
   maxs()[n] = mx;
   pintar(); guardar(); cerrar();
 }
@@ -890,19 +1109,25 @@ function pintarHist(){
 
 /* ---------------- Compras (consolidado de las 8 bocas) ----------------
    Solo tiene sentido para quien ve los archivos de las demás bocas (un admin
-   del servidor). Trae el estado de cada lugar, toma su ÚLTIMO mes y suma el
+   del servidor). Trae el estado de cada lugar, toma el mes DE HOY (ver juntarBocas)
    pedido por insumo, agrupado por proveedor (categoría).                     */
 
 /* El pedido de un item dentro de un estado ajeno, sin tocar los globales.
-   Replica la regla: manual si lo hay, si no MÁXIMO − ACTUAL.                 */
+   Replica la regla: manual si lo hay, si no MÁXIMO − ACTUAL.
+   CON UNA DIFERENCIA sobre la pantalla de la boca: si el ACTUAL esta VACIO, aca da 0
+   en vez de tratarlo como cero. En la pantalla de la boca mostrar `maximo - 0` es util
+   (te dice cuanto pedirias si no tenes nada); en la COMPRA seria comprar un item que
+   nadie conto. En septiembre 2026 Malvinas tenia 5 insumos contados de 40: los otros
+   35 entraban al maximo. Un PEDIDO pisado a mano si vale, porque es una orden
+   explicita: se chequea antes.                                                   */
 function pedidoEn(est, mes, nombre, maxCat){
   var man = est.manual && est.manual[mes] ? est.manual[mes][nombre] : undefined;
   if(!(man===undefined||man===null||man==="")) return +man;
+  var ac = est.conteos && est.conteos[mes] ? est.conteos[mes][nombre] : undefined;
+  if(ac===undefined||ac===null||ac==="") return 0;            // sin contar: no se compra
   var mx = est.maxs && est.maxs[mes] ? est.maxs[mes][nombre] : undefined;
   if(mx===undefined||mx===null||mx==="") mx = maxCat;         // fallback: máximo del item
-  var ac = est.conteos && est.conteos[mes] ? est.conteos[mes][nombre] : undefined;
-  ac = (ac===undefined||ac===null||ac==="") ? 0 : +ac;
-  return Math.max(0, (mx||0) - ac);
+  return Math.max(0, (mx||0) - (+ac));
 }
 
 var comprasCache = null;
@@ -915,7 +1140,7 @@ function pintarCompras(){
     // sumar por insumo, agrupado por categoría (proveedor)
     var porItem = {};        // nombre -> {cat, total, det:[{lugar,q}]}
     bocas.forEach(function(b){
-      if(!b.estado) return;
+      if(!b.comprar) return;          // mes viejo o sin contar: no se compra
       var mes = b.mes;
       b.estado.items.forEach(function(it){
         if(!it.activo) return;
@@ -930,11 +1155,26 @@ function pintarCompras(){
 
     var html = "";
     // resumen de estado de cada boca
-    var listas = bocas.filter(function(b){ return b.estado; }).length;
+    var listas = bocas.filter(function(b){ return b.comprar; }).length;
     html += '<div class="cmp-bocas">'+ bocas.map(function(b){
-      return '<span class="chip '+(b.estado?"si":"no")+'">'+b.n+
-        (b.estado ? ' · '+nomMes(b.mes) : ' · sin cargar')+'</span>';
+      return '<span class="chip '+(b.comprar?(b.parcial?"ojo":"si"):"ojo")+'">'+b.n+' · '+
+        (b.comprar ? b.contados+' de '+b.total+' contados' : b.motivo)+'</span>';
     }).join("") + '</div>';
+
+    // Lo que NO entra en la compra va arriba y en grande. Una boca que falta se reclama;
+    // una boca sumada al maximo son unidades compradas de mas y plata gastada.
+    var fuera = bocas.filter(function(b){ return !b.comprar; });
+    var flojas = bocas.filter(function(b){ return b.comprar && b.parcial; });
+    if(fuera.length)
+      html += '<div class="aviso" style="border-radius:8px;margin:0 0 8px"><span>'+
+        '<b>⚠ '+fuera.length+' de '+bocas.length+' bocas NO entran en esta compra:</b> '+
+        fuera.map(function(b){ return b.n+' ('+b.motivo+')'; }).join(' · ')+
+        '. Reclamales el pedido antes de comprar.</span></div>';
+    if(flojas.length)
+      html += '<div class="aviso" style="border-radius:8px;margin:0 0 12px"><span>'+
+        '<b>⚠ Contaron a medias:</b> '+
+        flojas.map(function(b){ return b.n+' ('+b.contados+' de '+b.total+')'; }).join(' · ')+
+        '. Lo que no contaron NO se compra: si falta algo, que lo cuenten.</span></div>';
 
     CATS.forEach(function(c){
       var items = Object.keys(porItem).filter(function(n){ return porItem[n].cat === c; })
@@ -972,30 +1212,52 @@ function pintarCompras(){
 /* Trae el estado de las 8 bocas en UNA sola llamada (?all=1).
    El backend devuelve {deposito:{...}, malvinas:{...}, ...}.                 */
 function juntarBocas(cb){
-  var vacio = LUGARES.map(function(l){ return {id:l.id, n:l.n, estado:null, mes:null}; });
+  var vacio = LUGARES.map(function(l){
+    return {id:l.id, n:l.n, estado:null, mes:null, comprar:false, motivo:"sin conexión"};
+  });
   if(!EN_LINEA) return cb(vacio);
   var x = new XMLHttpRequest();
   x.open("GET", APPS_SCRIPT_URL + "?all=1", true); x.timeout = 25000;
   x.onload = function(){
     var data = {};
     try{ data = JSON.parse(x.responseText) || {}; }catch(e){}
+    var hoy = mesHoy();
     cb(LUGARES.map(function(l){
       var est = data[l.id];
-      var ok = est && est.meses && est.meses.length;
-      return {id:l.id, n:l.n, estado: ok ? est : null,
-              mes: ok ? est.meses[est.meses.length-1] : null};
+      if(!(est && est.meses && est.meses.length))
+        return {id:l.id, n:l.n, estado:null, mes:null, comprar:false, motivo:"sin cargar"};
+      var ultimo = est.meses[est.meses.length - 1];
+      // Regla 1: el mes que se compra es EL DE HOY, no el ultimo que quedo en la fila.
+      if(est.meses.indexOf(hoy) < 0)
+        return {id:l.id, n:l.n, estado:est, mes:ultimo, comprar:false,
+                motivo:"no abrió " + nomMes(hoy) + ", quedó en " + nomMes(ultimo)};
+      // Regla 2: un mes SIN NINGUN CONTEO pide el MAXIMO de todo, porque calcDe() lee el
+      // ACTUAL vacio como 0. Eso no es un pedido: es una boca que no conto.
+      var c = (est.conteos && est.conteos[hoy]) || {};
+      var contados = Object.keys(c).filter(function(k){
+        var v = c[k]; return !(v === undefined || v === null || v === "");
+      }).length;
+      var total = (est.items || []).filter(function(it){ return it.activo; }).length;
+      if(!contados)
+        return {id:l.id, n:l.n, estado:est, mes:hoy, comprar:false, total:total,
+                motivo:"no contó nada de " + total};
+      // `parcial`: conto menos de la mitad. Entra en la compra (lo contado es real),
+      // pero se avisa fuerte, porque lo que falta no se va a comprar.
+      return {id:l.id, n:l.n, estado:est, mes:hoy, comprar:true,
+              contados:contados, total:total, parcial: contados * 2 < total};
     }));
   };
   x.onerror = x.ontimeout = function(){ cb(vacio); };
   x.send();
 }
 
+
 /* Texto de compras de una categoría (proveedor), sumado entre bocas */
 function textoCompras(cat){
   if(!comprasCache) return "";
   var porItem = {};
   comprasCache.forEach(function(b){
-    if(!b.estado) return;
+    if(!b.comprar) return;
     b.estado.items.forEach(function(it){
       if(!it.activo || it.c !== cat) return;
       var q = pedidoEn(b.estado, b.mes, it.n, it.max);
@@ -1028,7 +1290,7 @@ function copiarCompras(cat){
 function excelCompras(cat){
   if(!comprasCache) return;
   // qué bocas participan en esta categoría, y el pedido por insumo/boca
-  var bocas = comprasCache.filter(function(b){ return b.estado; });
+  var bocas = comprasCache.filter(function(b){ return b.comprar; });
   var porItem = {};   // nombre -> {porBoca:{id:q}, total}
   bocas.forEach(function(b){
     b.estado.items.forEach(function(it){
@@ -1084,9 +1346,10 @@ var ADMIN_MARCA = "insumos_admin_ok";
 var CLAVE_PRECIOS = "precios";        // fila propia en la planilla
 var PRECIOS = null;                   // {insumo: precio}
 
-function esAdmin(){
-  try{ return sessionStorage.getItem(ADMIN_MARCA) === "1"; }catch(e){ return false; }
-}
+/* Desde el 08/09/2026 el permiso sale de LA CLAVE con la que se entro, no de una
+   segunda clave. ADMIN_HASH y pedirClaveAdmin() quedaron sin uso a proposito: si
+   alguna vez se quiere un segundo factor para la plata, ya estan escritos.     */
+function esAdmin(){ return puedeCompras(); }
 
 function pedirClaveAdmin(luegoOk){
   abrir('<h3>Solo Administración</h3>'+
@@ -1358,10 +1621,47 @@ function abrirSalida(){
     '</div>');
 }
 
-/* Manda el pedido a Administración: guarda en el servidor con enviar=true, y el
-   Apps Script dispara el mail. El cuerpo es el mismo texto que va por WhatsApp. */
+/* Cuantas unidades tiene el pedido del mes que se esta viendo */
+function totalUnidades(){
+  return activos().reduce(function(t,i){ return t + pedidoDe(i); }, 0);
+}
+
+/* Ultimo control antes de que el pedido salga: que quede A LA VISTA en nombre de
+   que boca y de que mes se manda.
+   Es la guarda de los dos accidentes del 09/2026: el pedido del 03/09 que salio
+   como "Deposito" siendo de otra boca, y el mail del 24/08 que salio con
+   "SEPTIEMBRE 2025" porque el selector de mes estaba en un mes viejo -- y a
+   Administracion le llego igual que un pedido normal.
+   El mes se compara contra mesHoy(), NO contra el ultimo de E.meses: si la boca
+   nunca apreto "+ Nuevo mes", el mes viejo ES el ultimo de la lista y comparar
+   contra el no avisaba nada.                                                    */
+function confirmarEnvio(){
+  var hoy = mesHoy();
+  var aviso = "";
+  if(mesAct !== hoy){
+    aviso += "\n\n⚠ OJO: estás mandando " + nomMes(mesAct) + " y hoy es " + nomMes(hoy) + ".";
+    aviso += (E.meses.indexOf(hoy) < 0)
+      ? "\nEste mes todavía no se abrió: cancelá, apretá \"+ Nuevo mes\" y contá sobre ése."
+      : "\nSi no querías mandar un mes viejo, cancelá.";
+  }
+  var ya = E.enviados && E.enviados[mesAct];
+  if(ya){
+    aviso += "\n\n⚠ Este mes ya se envió el " +
+             new Date(ya).toLocaleString("es-AR") + ".";
+  }
+  var sinContar = activos().filter(function(i){ return actual(i.n) === null; }).length;
+  if(sinContar){
+    aviso += "\n\n⚠ Hay " + sinContar + " insumo(s) SIN CONTAR: van pedidos al máximo.";
+  }
+  return confirm("¿Enviar este pedido a Administración?\n\n" +
+    "Lugar: " + nomLugar(lugar).toUpperCase() + "\n" +
+    "Mes: " + nomMes(mesAct) + "\n" +
+    "Total: " + totalUnidades() + " unidades" + aviso);
+}
+
 function enviarAdmin(btn){
   if(!EN_LINEA) return;
+  if(!confirmarEnvio()) return;
   btn.disabled = true; var prev = btn.textContent; btn.textContent = "Enviando…";
   var asunto = "Pedido de insumos — " + nomLugar(lugar) + " — " + nomMes(mesAct);
   var x = new XMLHttpRequest();
@@ -1369,7 +1669,20 @@ function enviarAdmin(btn){
   x.setRequestHeader("Content-Type", "text/plain;charset=utf-8");
   x.timeout = 25000;
   x.onload = function(){
-    var ok = false; try{ ok = JSON.parse(x.responseText).mail === "enviado"; }catch(e){}
+    var r = null; try{ r = JSON.parse(x.responseText); }catch(e){}
+    // Este POST tambien lleva `base`: si alguien escribio la fila mientras se armaba el
+    // pedido, no se pisa y NO sale el mail. Un mail con datos pisados es peor que ninguno.
+    if(r && r.ok === false && r.error === "desactualizado"){
+      baseTs = r.actualizado || null;
+      confirmado = false;
+      btn.disabled = false; btn.textContent = prev;
+      estado("conflicto");
+      alert("⚠ NO se envió.\n\nOtra persona guardó el pedido de " + nomLugar(lugar) +
+            " mientras armabas este.\n\nRecargá la página, mirá cómo quedó y volvé a enviar.");
+      return;
+    }
+    if(r && r.actualizado) baseTs = String(r.actualizado);
+    var ok = r && r.mail === "enviado";
     btn.textContent = ok ? "✓ Enviado a Administración" : "Se guardó, pero el mail falló";
     btn.style.background = ok ? "#0F7A3D" : "#b45309";
   };
@@ -1377,7 +1690,12 @@ function enviarAdmin(btn){
     btn.disabled = false; btn.textContent = prev;
     alert("No se pudo enviar. Fijate la conexión y probá de nuevo.");
   };
-  x.send(JSON.stringify({ lugar: lugar, estado: E, enviar: true, asunto: asunto, cuerpo: textoWA() }));
+  // Queda registrado en el estado: hasta ahora el unico rastro de un envio era el
+  // mail, asi que un pedido fantasma no se podia fechar.
+  E.enviados = E.enviados || {};
+  E.enviados[mesAct] = new Date().toISOString();
+  x.send(JSON.stringify({ lugar: lugar, estado: E, base: baseTs, enviar: true,
+                          asunto: asunto, cuerpo: textoWA() }));
 }
 
 function copiar(id, btn){
@@ -1433,28 +1751,64 @@ function guardar(){
 
 function subir(){
   if(!EN_LINEA) return;
-  if(guardando){ pendiente = true; return; }
+  if(!confirmado){ estado("sinconfirmar"); return; }   // ver el comentario de `confirmado`
+  postear(lugar, {lugar: lugar, estado: E});
+}
+
+/* Manda un cuerpo YA ARMADO. Se congela el OBJETO al encolar, no el JSON, porque el
+   `base` se inyecta al momento de mandar: una escritura encolada tiene que usar el sello
+   que devolvio la que estaba en vuelo, no el que habia cuando se encolo.
+   Antes `pendiente` era un booleano y el reintento releia `lugar` y `E` globales, asi que
+   al cambiar de boca con un POST en vuelo la edicion encolada se perdia en silencio.  */
+function postear(lug, obj){
+  if(guardando){ pendiente = {lugar: lug, obj: obj}; return; }
   guardando = true; estado("guardando");
-  var lugarAlSubir = lugar, cuerpo = JSON.stringify({lugar: lugarAlSubir, estado: E});
+  var cuerpo = JSON.stringify({lugar: obj.lugar, estado: obj.estado, base: baseTs});
   var x = new XMLHttpRequest();
   x.open("POST", APPS_SCRIPT_URL, true);
   x.setRequestHeader("Content-Type", "text/plain;charset=utf-8");
   x.timeout = 25000;
-  x.onload  = function(){ guardando = false; estado("ok");    if(pendiente){ pendiente=false; subir(); } };
+  x.onload = function(){
+    guardando = false;
+    var r = null;
+    try{ r = JSON.parse(x.responseText); }catch(e){}
+    if(r && r.ok === false && r.error === "desactualizado"){
+      // Otro dispositivo escribio esta fila. NO se pisa: se corta y se avisa.
+      pendiente = null;
+      confirmado = false;                    // hasta releer, no se escribe mas
+      baseTs = r.actualizado || null;
+      estado("conflicto");
+      alert("⚠ Otra persona guardó el pedido de " + nomLugar(lug) + " mientras cargabas.\n\n" +
+            "Para no pisarle lo que hizo, esto NO se guardó.\n\n" +
+            "Recargá la página y volvé a poner lo que falte.");
+      return;
+    }
+    if(r && r.actualizado) baseTs = String(r.actualizado);
+    estado("ok");
+    if(pendiente){ var p = pendiente; pendiente = null; postear(p.lugar, p.obj); }
+  };
   x.onerror = x.ontimeout = function(){ guardando = false; estado("error"); };
   x.send(cuerpo);
 }
 
+
 /* Lee el estado de un lugar del servidor. cb(err, estado|null) */
+/* Lee el estado de un lugar del servidor. cb(err, estado|null, sello).
+   Pide `ts=1` para que venga el SELLO de la fila (la version). El backend envuelve la
+   respuesta en {estado, actualizado} solo cuando se le pide asi; sin `ts=1` devuelve el
+   estado pelado, que es lo que sigue consumiendo el index.html viejo en produccion.  */
 function leerServidor(id, cb){
   if(!EN_LINEA) return cb(new Error("sin backend"));
   var x = new XMLHttpRequest();
-  x.open("GET", APPS_SCRIPT_URL + "?lugar=" + encodeURIComponent(id), true);
+  x.open("GET", APPS_SCRIPT_URL + "?lugar=" + encodeURIComponent(id) + "&ts=1", true);
   x.timeout = 25000;
   x.onload = function(){
     try{
       var d = JSON.parse(x.responseText);
-      cb(null, (d && d.items && d.items.length) ? d : null);
+      // si el backend fuera viejo y no envolviera, `d` es el estado directo
+      var est = (d && d.estado !== undefined) ? d.estado : d;
+      var sello = (d && d.actualizado !== undefined) ? String(d.actualizado) : null;
+      cb(null, (est && est.items && est.items.length) ? est : null, sello);
     }catch(e){ cb(e); }
   };
   x.onerror = x.ontimeout = function(){ cb(new Error("sin conexión")); };
@@ -1470,8 +1824,18 @@ document.addEventListener("visibilitychange", function(){
     return;
   }
   if(guardando || pendiente) return;
-  leerServidor(lugar, function(err, res){
-    if(err || !res) return;
+  if(!E) return;                        // todavia no se entro (porton): no hay nada que refrescar
+  // MISMA GUARDA QUE cargar(): sin esto, el estado de la boca vieja aterrizaba en E y el
+  // primer tecleo lo subia a la fila de la boca nueva. Es lo que metio los 17 meses del
+  // Deposito en Balcarce y Administracion.
+  var idPedido = lugar;
+  leerServidor(idPedido, function(err, res, sello){
+    if(idPedido !== lugar) return;       // cambio de boca mientras leia
+    if(err) return;
+    // El sello se guarda aunque el contenido sea igual: si otro dispositivo escribio
+    // lo mismo, la version cambio y sin esto la proxima escritura chocaria de gusto.
+    if(sello) baseTs = sello;
+    if(!res) return;
     if(JSON.stringify(res) === JSON.stringify(E)) return;
     E = res;
     if(E.meses.indexOf(mesAct) < 0) mesAct = E.meses[E.meses.length-1];
@@ -1489,6 +1853,8 @@ function estado(s){
   if(s === "ok"){ e.textContent = "✓ guardado"; e.style.color = "#0F7A3D"; }
   if(s === "error"){ e.textContent = "⚠ sin conexión — guardado en este equipo"; e.style.color = "#b45309"; }
   if(s === "recargado"){ e.textContent = "↻ actualizado"; e.style.color = "#0F7A3D"; }
+  if(s === "conflicto"){ e.textContent = "⚠ otro guardó — recargá"; e.style.color = "var(--rojo)"; }
+  if(s === "sinconfirmar"){ e.textContent = "⚠ NO se guarda en la planilla"; e.style.color = "var(--rojo)"; }
 }
 </script>
 </body>
