@@ -491,18 +491,49 @@ function esFijo(it){
 /* ---- Estado ---- */
 var E = null;      // {items:[{n,c,max,activo}], conteos:{mes:{insumo:actual}}, meses:[]}
 var mesAct = "";
-var guardando = false, pendiente = null;   // pendiente = {lugar, cuerpo} congelado
+/* El mes lo eligio la persona en el selector (y no es el ultimo). Mientras sea false, al
+   llegar la planilla la pantalla se va al ULTIMO mes. Antes se quedaba en el que traia el
+   equipo: un celu o una PC sin usar desde septiembre abria en SEPTIEMBRE aunque octubre ya
+   existiera (y un equipo nuevo del Deposito, en AGOSTO, el ultimo de la precarga), y lo
+   que se contaba caia ahi. Paso el 01/10/2026 en el Deposito.                      */
+var mesElegido = false;
+var guardando = false, pendiente = null;   // pendiente = {lugar, obj} congelado
 /* Se logro LEER la fila de esta boca del servidor al menos una vez en esta carga.
    Mientras sea false no se POSTea nada: sin haber confirmado la fila, subir el cache
    local entero pisa lo que haya hecho otra persona desde otro dispositivo. Se prefiere
-   avisar "no se guardo en la planilla" antes que pisar en silencio.               */
+   avisar "no se guardo en la planilla" antes que pisar en silencio. Vale tambien para
+   el ENVIO, que tambien escribe la fila.                                          */
 var confirmado = false;
-/* Sello (version) de la fila de esta boca tal como se leyo del servidor. Se manda
-   como `base` en cada escritura para que el backend no deje pisar lo que escribio
-   otro dispositivo. null = no hay base y la escritura va incondicional (como antes).
+/* Sello (version) de la fila de CADA boca, tal como se leyo o se escribio por ultima vez.
+   Se manda como `base` en cada escritura para que el backend no deje pisar lo que escribio
+   otro dispositivo. Sin sello la escritura va incondicional (como antes).
    Lo actualiza la respuesta de cada POST: sin eso, el POST siguiente choca contra su
-   propia escritura anterior y la app deja de guardar.                            */
-var baseTs = null;
+   propia escritura anterior y la app deja de guardar.
+   Va POR BOCA y no en una sola variable: Logistica cambia de boca con escrituras en vuelo,
+   y la respuesta de la boca vieja le cambiaba el sello a la nueva (cartel falso).
+   Un rechazo NO lo actualiza: el sello del rechazo es el de una escritura ajena que este
+   equipo no leyo, y adoptarlo dejaba que el siguiente envio pisara lo del otro.     */
+var sellos = {};
+/* Lo ultimo que la planilla CONFIRMO tener de la boca que se ve, como texto canonico: lo
+   que se leyo, o lo que se escribio y el backend acepto. Si E es distinto, este equipo
+   tiene cambios que la planilla todavia no tiene, y una relectura NO los puede pisar.
+   Antes de leer la fila no se sabe: lo que se conoce es su huella (`baseHuella`) y su sello
+   (`selloCargado`), anotados en el equipo al lado del cache (ver guardarLocal).    */
+var baseTxt = null, baseHuella = null, selloCargado = null;
+/* Huellas de lo que una pagina ANTERIOR dejo mandado sin confirmar, por boca (anotadas al
+   lado del cache): si la planilla tiene una de esas, es de este mismo equipo.        */
+var vueloDe = {};
+var huellaDe = {};   // la huella de la base de las bocas que NO se estan viendo (Logistica)
+var estadoDe = {};   // el estado de cada boca abierta en esta pagina (ver cargar)
+var sinSubir = {};   // bocas que se dejaron con una escritura fallida: las sube el reintento
+/* Escrituras cuya respuesta no llego o no se entendio (error, timeout, pagina de error),
+   por boca: el servidor pudo haberlas escrito igual. Si despues un guardado choca, se mira
+   primero si la fila tiene una de estas: si es asi, el "otro" fue este mismo equipo.  */
+var inciertos = {};
+/* Hubo un conflicto DE VERDAD (otro equipo escribio): hasta recargar no se escribe nada,
+   ni se relee, ni se envia.                                                        */
+var conflictoAbierto = false;
+var nEscritura = 0, nLectura = 0;   // para reconocer una lectura que pudo quedar vieja
 
 /* ---------------- Clave de acceso, una por lugar ----------------
    Cada boca tiene SU clave y LA CLAVE DECIDE EL LUGAR: no hay selector, asi que
@@ -652,6 +683,7 @@ function arrancarApp(){
    segundos esperando a Google, y parecía colgada.                            */
 function cargar(){
   confirmado = false;                       // hasta no leer la fila, no se escribe
+  conflictoAbierto = false;
   var av = document.getElementById("avisoLocal");
   if(av) av.style.display = "none";
   var local = null;
@@ -666,34 +698,33 @@ function cargar(){
     return usar(null, local);
   }
 
-  // 1) mostrar algo al instante
-  E = local || (lugar === "deposito" ? desdePrecarga() : catalogoNuevo());
+  // 1) mostrar algo al instante. Si esta boca ya se abrio en esta pagina, se sigue con EL MISMO
+  //    estado y no con una copia del cache: una escritura de la visita anterior todavia puede
+  //    estar en vuelo con ese objeto, y si se reintentara con la copia vieja pisaria lo que
+  //    se cargue ahora (Logistica que va y vuelve entre bocas).
+  var yaAbierta = !!estadoDe[lugar];
+  E = estadoDe[lugar] || local || (lugar === "deposito" ? desdePrecarga() : catalogoNuevo());
+  estadoDe[lugar] = E;
   arrancar();
   estado("cargando");
+  // Sobre que version de la planilla esta parado lo que se pinto. Si el equipo lo anoto (y la
+  // anotacion es de este cache), se usa: asi se reconoce lo que quedo sin subir. Si no, se
+  // supone que lo pintado es lo que tiene la planilla (lo de siempre).
+  // (Si la boca ya se abrio en esta pagina, lo que se sabe en memoria manda sobre la anotacion.)
+  var anot = leerBase(), pint = huella(canon(E));
+  baseTxt = null;
+  delete sinSubir[lugar];                          // lo que haya quedado sin subir lo resuelve la lectura
+  if(yaAbierta && huellaDe[lugar] !== undefined){
+    baseHuella = huellaDe[lugar]; selloCargado = sellos[lugar] === undefined ? null : sellos[lugar];
+  }
+  else if(anot && anot.e === pint){ baseHuella = anot.h; selloCargado = anot.sello; vueloDe[lugar] = anot.v || []; }
+  else { baseHuella = pint; selloCargado = null; vueloDe[lugar] = []; }
 
-  // 2) traer lo del servidor y actualizar si difiere
-  var idPedido = lugar;
-  leerServidor(idPedido, function(err, res, sello){
-    if(idPedido !== lugar) return;          // cambió de boca mientras cargaba
-    if(err){
-      modoLocal("No se pudo leer la planilla. Podés contar, queda guardado en este equipo, " +
-                "pero <b>NO se está guardando en la planilla</b>: recargá cuando vuelva internet.");
-      estado("error");
-      return;
-    }
-    confirmado = true;                      // la fila es la del servidor: ya se puede escribir
-    baseTs = sello;                         // y esta es la version que se leyo
-    if(res && res.items && res.items.length){
-      if(JSON.stringify(res) !== JSON.stringify(E)){
-        E = res;
-        if(E.meses.indexOf(mesAct) < 0) mesAct = E.meses[E.meses.length-1];
-        pintarMeses(); pintar(); pintarHist();
-      }
-      estado("ok");
-    } else {
-      subir();                               // el servidor no tenía nada: subimos lo nuestro
-    }
-  });
+  // 2) traer lo del servidor (que hacer con la respuesta lo decide aplicarLectura).
+  //    Con una escritura propia en vuelo (Logistica que vuelve a una boca) se lee cuando
+  //    termine: leida antes, la foto puede ser anterior a lo que se esta guardando.
+  if(guardando || pendiente) leerAlVaciar = true;
+  else releer();
 }
 
 /* Decide con qué estado arranca: el del servidor manda; si no hay, sube el nuestro.
@@ -749,12 +780,74 @@ function desdePrecarga(){
   return st;
 }
 
+/* Lo que todo estado tiene que tener, venga del cache, de la precarga o de la planilla.
+   Antes solo se aplicaba al abrir: lo que llegaba de la planilla entraba tal cual.   */
+function normalizar(st){
+  if(!st.meses.length) st.meses = [mesHoy()];
+  if(!st.maxs) st.maxs = {};                      // por si viene de una versión anterior
+  if(!st.manual) st.manual = {};
+  if(!st.enviados) st.enviados = {};              // cuando se mando cada mes
+  return st;
+}
+
+/* El estado como texto con las claves ORDENADAS: para comparar dos estados sin depender
+   del orden en que se armaron los objetos (la fila de la planilla y el cache no siempre
+   coinciden en eso).                                                              */
+function canon(o){
+  return JSON.stringify(o, function(k, v){
+    if(!v || typeof v !== "object" || Array.isArray(v)) return v;
+    var r = {};
+    Object.keys(v).sort().forEach(function(x){ r[x] = v[x]; });
+    return r;
+  });
+}
+
+/* Huella corta de un texto (FNV-1a de 32 bits + largo): sirve para anotar en el equipo sobre
+   que version de la planilla esta parado el cache, sin guardar el estado dos veces.  */
+function huella(s){
+  var h = 0x811c9dc5;
+  for(var i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(16) + "." + s.length;
+}
+
+/* La version de la planilla que este equipo conoce de la boca que se ve. */
+function ponerBase(txt){
+  baseTxt = txt;
+  baseHuella = txt === null ? null : huella(txt);
+}
+
+/* El cache de esta boca y, al lado, sobre que version de la planilla esta parado (su sello y
+   su huella) y la huella del cache mismo. Asi, al reabrir, lo que no llego a subirse (se
+   cerro la app, se recargo, se corto la señal) se reconoce: si la planilla sigue en esa
+   version se sube, y si cambio se avisa. Antes se perdia sin aviso. La huella del cache es
+   para no confiar en una anotacion que no corresponde a ese cache (otra pestaña, o una
+   version vieja de la app que escribe el cache y no la anotacion).                  */
+function guardarLocal(){
+  guardarLocalDe(lugar, E, confirmado ? sellos[lugar] : selloCargado, baseHuella);
+}
+/* `v` son las huellas de lo que se mando y no se confirmo (inciertos): despues de recargar,
+   si la planilla tiene una de esas, es de este equipo y no de otro.                */
+function guardarLocalDe(lug, est, sello, h){
+  try{
+    var k = "insumos_martel_" + lug;
+    localStorage.setItem(k, JSON.stringify(est));
+    localStorage.setItem(k + "_base", JSON.stringify({
+      sello: sello === undefined ? null : sello, h: h, e: huella(canon(est)),
+      v: (inciertos[lug] || []).map(function(m){ return huella(m.txt); })
+           .concat(vueloDe[lug] || [])}));
+  }catch(e){}
+}
+function leerBase(){
+  try{
+    var b = JSON.parse(localStorage.getItem(claveLocal() + "_base") || "null");
+    return (b && b.e) ? b : null;
+  }catch(e){ return null; }
+}
+
 function arrancar(){
-  if(!E.meses.length) E.meses = [mesHoy()];
-  if(!E.maxs) E.maxs = {};                        // por si viene de una versión anterior
-  if(!E.manual) E.manual = {};
-  if(!E.enviados) E.enviados = {};                // cuando se mando cada mes
+  normalizar(E);
   mesAct = E.meses[E.meses.length-1];
+  mesElegido = false;
   pintarLugares();
   pintarMeses();
   pintar();
@@ -849,8 +942,9 @@ function pintarLugares(){
 function cambiarLugar(id){
   if(id === lugar) return;
   if(tDebounce){ clearTimeout(tDebounce); tDebounce = null; subir(); }
-  lugar = id;
-  baseTs = null;                    // otra fila, otro sello
+  // la base de la boca que se deja, por si todavia le vuelve una respuesta (ver tomarVersion)
+  if(confirmado) huellaDe[lugar] = baseHuella;
+  lugar = id;                       // el sello es por boca (`sellos`): no hace falta borrarlo
   try{ localStorage.setItem("insumos_lugar", lugar); }catch(e){}
   estado("cargando");
   cargar();
@@ -862,7 +956,11 @@ function pintarMeses(){
     return '<option value="'+m+'">'+nomMes(m)+'</option>';
   }).join("");
   s.value = mesAct;
-  s.onchange = function(){ mesAct = this.value; pintar(); };
+  s.onchange = function(){
+    mesAct = this.value;
+    mesElegido = mesAct !== E.meses[E.meses.length-1];   // elegir el ultimo es "seguir al ultimo"
+    pintar();
+  };
 }
 
 /* Avisa EN PANTALLA si se esta cargando un mes que no es el de hoy. El cartel de
@@ -1057,6 +1155,7 @@ function borrarMes(){
   delete E.maxs[mesAct];
   delete E.manual[mesAct];
   mesAct = E.meses[Math.min(i, E.meses.length - 1)];
+  mesElegido = mesAct !== E.meses[E.meses.length - 1];
   pintarMeses(); pintar(); pintarHist(); guardar();
 }
 
@@ -1072,6 +1171,7 @@ function nuevoMes(){
     E.maxs[m][it.n] = (v===undefined||v===null||v==="") ? (it.max||0) : +v;
   });
   mesAct = m;
+  mesElegido = false;
   pintarMeses(); pintar(); guardar();
 }
 
@@ -1659,43 +1759,86 @@ function confirmarEnvio(){
     "Total: " + totalUnidades() + " unidades" + aviso);
 }
 
+/* El envio es una escritura mas (lleva `base`): si alguien escribio la fila mientras se
+   armaba el pedido, no se pisa y NO sale el mail. Un mail con datos pisados es peor que
+   ninguno. Desde el 01/10/2026 va POR LA COLA, como los guardados: antes salia por su
+   cuenta, y con el ultimo numero todavia esperando sus 1,5 s (o subiendo) las dos
+   escrituras salian con el mismo sello y una chocaba con la otra -- "otra persona guardó"
+   sin otra persona, o "NO se envió" sin motivo. Y no sale sin haber leido la fila: no
+   miraba `confirmado`, y despues de un cartel de conflicto el envio pisaba lo del otro. */
 function enviarAdmin(btn){
   if(!EN_LINEA) return;
+  if(!confirmado)
+    return alert(conflictoAbierto
+      ? "⚠ No se puede enviar todavía: otro equipo guardó este pedido.\n\nRecargá la página, " +
+        "mirá cómo quedó y volvé a enviar."
+      : "⚠ Todavía no se pudo leer la planilla de " + nomLugar(lugar) + ".\n\nPara no pisar lo " +
+        "de otro equipo, el pedido no se manda hasta leerla: esperá a que abajo diga " +
+        "«✓ guardado» o recargá la página.");
   if(!confirmarEnvio()) return;
-  btn.disabled = true; var prev = btn.textContent; btn.textContent = "Enviando…";
-  var asunto = "Pedido de insumos — " + nomLugar(lugar) + " — " + nomMes(mesAct);
-  var x = new XMLHttpRequest();
-  x.open("POST", APPS_SCRIPT_URL, true);
-  x.setRequestHeader("Content-Type", "text/plain;charset=utf-8");
-  x.timeout = 25000;
-  x.onload = function(){
-    var r = null; try{ r = JSON.parse(x.responseText); }catch(e){}
-    // Este POST tambien lleva `base`: si alguien escribio la fila mientras se armaba el
-    // pedido, no se pisa y NO sale el mail. Un mail con datos pisados es peor que ninguno.
-    if(r && r.ok === false && r.error === "desactualizado"){
-      baseTs = r.actualizado || null;
-      confirmado = false;
-      btn.disabled = false; btn.textContent = prev;
-      estado("conflicto");
-      alert("⚠ NO se envió.\n\nOtra persona guardó el pedido de " + nomLugar(lugar) +
-            " mientras armabas este.\n\nRecargá la página, mirá cómo quedó y volvé a enviar.");
-      return;
+  btn.disabled = true;
+  var envio = { lugar: lugar, mes: mesAct, btn: btn, prev: btn.textContent, estado: E,
+                cuando: new Date().toISOString(),
+                asunto: "Pedido de insumos — " + nomLugar(lugar) + " — " + nomMes(mesAct),
+                cuerpo: textoWA() };
+  btn.textContent = "Enviando…";
+  // lo que faltaba subir viaja adentro del envio, que lleva E entero
+  if(tDebounce){ clearTimeout(tDebounce); tDebounce = null; }
+  alVaciar(function(){
+    if(envio.lugar !== lugar){
+      // Logistica cambio de boca antes de que saliera: no se manda el mail, pero lo que
+      // viajaba adentro del envio se guarda igual (el debounce ya se habia cancelado)
+      postear(envio.lugar, {lugar: envio.lugar, estado: envio.estado});
+      return cerrarEnvio(envio, "boca");
     }
-    if(r && r.actualizado) baseTs = String(r.actualizado);
-    var ok = r && r.mail === "enviado";
-    btn.textContent = ok ? "✓ Enviado a Administración" : "Se guardó, pero el mail falló";
-    btn.style.background = ok ? "#0F7A3D" : "#b45309";
-  };
-  x.onerror = x.ontimeout = function(){
-    btn.disabled = false; btn.textContent = prev;
+    if(!confirmado) return cerrarEnvio(envio, conflictoAbierto ? "conflicto" : "error");
+    // Queda registrado en el estado: hasta ahora el unico rastro de un envio era el
+    // mail, asi que un pedido fantasma no se podia fechar. Si el mail no sale, se saca.
+    E.enviados = E.enviados || {};
+    E.enviados[envio.mes] = envio.cuando;
+    postear(envio.lugar, {lugar: envio.lugar, estado: E}, envio);
+  });
+}
+
+/* Como termino un envio: el boton y la marca E.enviados[mes].
+   ok = salio el mail · ya = un intento anterior cuya respuesta se perdio SI habia llegado
+   (no se manda dos veces) · mail = se guardo pero el mail fallo · conflicto / error = no
+   salio. La marca queda solo si el envio llego: antes quedaba aunque fallara, el proximo
+   numero la subia a la planilla y al reintentar el cartel decia "este mes ya se envió". */
+function cerrarEnvio(envio, como, anterior){
+  var st = envio.estado, btn = envio.btn;
+  st.enviados = st.enviados || {};
+  if(como === "ok" || como === "ya"){
+    var cuando = anterior ? anterior.cuando : envio.cuando;
+    st.enviados[envio.mes] = cuando;
+    btn.textContent = como === "ya"
+      ? "✓ Ya se había enviado (" + new Date(cuando).toLocaleTimeString("es-AR",
+          {hour:"2-digit", minute:"2-digit"}) + ")"
+      : "✓ Enviado a Administración";
+    btn.style.background = "#0F7A3D";
+    anotar(envio.lugar, st);
+    return;
+  }
+  if(st.enviados[envio.mes] === envio.cuando) delete st.enviados[envio.mes];
+  if(como === "mail"){
+    btn.textContent = "Se guardó, pero el mail falló";
+    btn.style.background = "#b45309";
+    if(envio.lugar === lugar) guardar();          // que la fila no diga "enviado" si no salio
+    else { anotar(envio.lugar, st); sinSubir[envio.lugar] = true; programarReintento(); }
+    return;
+  }
+  btn.disabled = false; btn.textContent = envio.prev;
+  anotar(envio.lugar, st);                           // que el cache tampoco quede con la marca
+  if(como === "conflicto")
+    alert("⚠ NO se envió.\n\nOtro equipo guardó el pedido de " + nomLugar(envio.lugar) +
+          " mientras armabas este (otra persona, u otro celu o pestaña tuya).\n\n" +
+          "Recargá la página, mirá cómo quedó y volvé a enviar.");
+  else if(como === "boca")
+    alert("⚠ El pedido de " + nomLugar(envio.lugar) + " NO se envió: cambiaste de boca antes de " +
+          "que saliera.\n\nLo cargado queda guardado. Volvé a " + nomLugar(envio.lugar) +
+          " y envialo de nuevo.");
+  else
     alert("No se pudo enviar. Fijate la conexión y probá de nuevo.");
-  };
-  // Queda registrado en el estado: hasta ahora el unico rastro de un envio era el
-  // mail, asi que un pedido fantasma no se podia fechar.
-  E.enviados = E.enviados || {};
-  E.enviados[mesAct] = new Date().toISOString();
-  x.send(JSON.stringify({ lugar: lugar, estado: E, base: baseTs, enviar: true,
-                          asunto: asunto, cuerpo: textoWA() }));
 }
 
 function copiar(id, btn){
@@ -1738,20 +1881,41 @@ function cerrar(){ document.getElementById("velo").classList.remove("on"); }
    Se guarda SIEMPRE en el dispositivo (instantáneo, aguanta que se corte la red)
    y además se sube al servidor. Sin botón de guardar: se dispara al tipear, con
    un respiro de 1,5 s para no mandar en cada tecla. Las subidas se encolan.
-   POST con Content-Type text/plain: así el navegador no hace preflight CORS.    */
-var tDebounce = null;
+   POST con Content-Type text/plain: así el navegador no hace preflight CORS.
+
+   Que se lee y que se escribe (01/10/2026). La app recuerda la ULTIMA VERSION DE LA FILA
+   QUE CONOCE: su sello (`sellos`) y su contenido (`baseTxt`). Si E es distinto de baseTxt,
+   este equipo tiene cambios que la planilla todavia no tiene. Eso mismo se anota al lado del
+   cache (guardarLocal), asi sobrevive a recargar o cerrar la app. Cuatro reglas:
+   - Una lectura solo reemplaza E si aca no hay nada sin subir y no se escribio nada desde
+     que se pidio (aplicarLectura). Antes cualquier lectura pisaba E y el sello: al volver a
+     la pantalla del celu, la foto vieja borraba el ultimo numero tipeado, o dejaba el sello
+     viejo y el guardado siguiente chocaba con el propio -- "⚠ Otra persona guardó…" sin
+     otra persona. Le paso a Hector en el Deposito.
+   - Un rechazo puede ser de este mismo equipo, si se perdio una respuesta pero el servidor
+     escribio igual: antes de avisar se mira si la fila tiene algo que mando este equipo.
+   - Lo que no subio se reintenta solo. Antes quedaba "guardado en este equipo" hasta el
+     proximo numero tipeado, y una respuesta rara del servidor caia como "✓ guardado".
+   - Al abrir, lo que quedo sin subir de antes (se recargo, se cerro, se corto la señal) se
+     sube si la planilla no cambio desde entonces; si cambio, se avisa. Antes se perdia sin
+     aviso: la lectura lo pisaba.                                                    */
+var tDebounce = null, tReintento = null;
+var leerAlVaciar = false, alVaciarCola = [];
 
 function guardar(){
-  try{ localStorage.setItem(claveLocal(), JSON.stringify(E)); }catch(e){}
+  guardarLocal();
   if(!EN_LINEA) return;
   estado("guardando");
   clearTimeout(tDebounce);
-  tDebounce = setTimeout(subir, 1500);
+  // vuelve a null al correr: si no, cambiarLugar() y el "hidden" mandaban un POST de mas
+  tDebounce = setTimeout(function(){ tDebounce = null; subir(); }, 1500);
 }
 
 function subir(){
   if(!EN_LINEA) return;
-  if(!confirmado){ estado("sinconfirmar"); return; }   // ver el comentario de `confirmado`
+  if(!confirmado){ estado(conflictoAbierto ? "conflicto" : "sinconfirmar"); return; }   // ver `confirmado`
+  // la planilla ya tiene exactamente esto: no se reescribe (cada escritura cambia el sello)
+  if(!guardando && !pendiente && canon(E) === baseTxt){ estado("ok"); return; }
   postear(lugar, {lugar: lugar, estado: E});
 }
 
@@ -1759,36 +1923,239 @@ function subir(){
    `base` se inyecta al momento de mandar: una escritura encolada tiene que usar el sello
    que devolvio la que estaba en vuelo, no el que habia cuando se encolo.
    Antes `pendiente` era un booleano y el reintento releia `lugar` y `E` globales, asi que
-   al cambiar de boca con un POST en vuelo la edicion encolada se perdia en silencio.  */
-function postear(lug, obj){
-  if(guardando){ pendiente = {lugar: lug, obj: obj}; return; }
-  guardando = true; estado("guardando");
-  var cuerpo = JSON.stringify({lugar: obj.lugar, estado: obj.estado, base: baseTs});
+   al cambiar de boca con un POST en vuelo la edicion encolada se perdia en silencio.
+   `envio` (opcional) hace que ademas salga el mail; solo llega con la cola vacia.     */
+function postear(lug, obj, envio){
+  if(guardando){
+    if(envio) return alVaciar(function(){ postear(lug, obj, envio); });   // un envio no se pisa
+    pendiente = {lugar: lug, obj: obj};
+    return;
+  }
+  guardando = true; nEscritura++;
+  if(lug === lugar) estado("guardando");
+  // Lo que se manda queda anotado ANTES de que salga: si la respuesta se pierde, o se recarga
+  // la pagina con esto en vuelo, despues se reconoce como propio y no como de "otro equipo".
+  var mandado = canon(obj.estado), yo = {txt: mandado, envio: envio || null};
+  var l = inciertos[lug] = inciertos[lug] || [];
+  l.push(yo);
+  if(l.length > 10) l.shift();
+  anotar(lug, obj.estado);
+  var cuerpo = {lugar: obj.lugar, estado: obj.estado,
+                base: sellos[lug] === undefined ? null : sellos[lug]};
+  if(envio){ cuerpo.enviar = true; cuerpo.asunto = envio.asunto; cuerpo.cuerpo = envio.cuerpo; }
   var x = new XMLHttpRequest();
   x.open("POST", APPS_SCRIPT_URL, true);
   x.setRequestHeader("Content-Type", "text/plain;charset=utf-8");
   x.timeout = 25000;
   x.onload = function(){
-    guardando = false;
     var r = null;
     try{ r = JSON.parse(x.responseText); }catch(e){}
-    if(r && r.ok === false && r.error === "desactualizado"){
-      // Otro dispositivo escribio esta fila. NO se pisa: se corta y se avisa.
-      pendiente = null;
-      confirmado = false;                    // hasta releer, no se escribe mas
-      baseTs = r.actualizado || null;
-      estado("conflicto");
-      alert("⚠ Otra persona guardó el pedido de " + nomLugar(lug) + " mientras cargabas.\n\n" +
-            "Para no pisarle lo que hizo, esto NO se guardó.\n\n" +
-            "Recargá la página y volvé a poner lo que falte.");
+    if(r && r.ok === false && r.error === "desactualizado") return revisarRechazo(lug, obj, envio, yo);
+    // Contesto pero NO guardo, o no se sabe: "ocupado" (el lock no se libero a tiempo) o una
+    // pagina de error del Apps Script (p. ej. la celda paso los 50.000 caracteres). Antes
+    // esto caia en "✓ guardado".
+    if(!r || r.ok !== true) return falloEscritura(lug, envio, "rechazado");
+    sellos[lug] = r.actualizado ? String(r.actualizado) : undefined;
+    inciertos[lug] = [];
+    tomarVersion(lug, obj.estado, mandado);
+    if(envio) cerrarEnvio(envio, r.mail === "enviado" ? "ok" : "mail");
+    // el pie es de la boca que se ve: lo de una boca que se dejo no lo toca
+    if(lug === lugar && confirmado) estado(canon(E) !== baseTxt ? "guardando" : "ok");
+    terminoEscritura();
+  };
+  x.onerror = x.ontimeout = function(){ falloEscritura(lug, envio, "error"); };
+  x.send(JSON.stringify(cuerpo));
+}
+
+/* La planilla confirmo que la boca `lug` tiene `txt` (ya puesto su sello en `sellos`).
+   Si es la boca que se ve, es la nueva base; si es una de antes (Logistica cambio de boca
+   con esto en vuelo), se anota en el equipo para cuando vuelva.                     */
+function tomarVersion(lug, est, txt){
+  // lo que dejo en vuelo la pagina anterior ya entro antes que esto, o va a rebotar (base vieja)
+  vueloDe[lug] = [];
+  if(lug === lugar){
+    if(!confirmado) selloCargado = sellos[lug];   // (Logistica volvio a la boca con esto en vuelo)
+    ponerBase(txt); guardarLocal();
+  }
+  else { huellaDe[lug] = huella(txt); guardarLocalDe(lug, est, sellos[lug], huellaDe[lug]); }
+}
+function anotar(lug, est){
+  if(lug === lugar) guardarLocal();
+  else guardarLocalDe(lug, est, sellos[lug], huellaDe[lug]);
+}
+
+/* La escritura no se confirmo. El servidor PUDO haberla escrito igual (la respuesta se
+   perdio): ya quedo anotada al mandarla (`inciertos`), y se reintenta sola.        */
+function falloEscritura(lug, envio, como){
+  if(envio) cerrarEnvio(envio, "error");
+  if(lug === lugar) estado(como);
+  else sinSubir[lug] = true;                 // una boca que se dejo (Logistica): la sube el reintento
+  programarReintento();
+  terminoEscritura();
+}
+
+/* El backend no dejo escribir: la fila cambio desde la version que este equipo conocia.
+   Antes de avisar se mira la fila: si tiene algo que mando ESTE equipo (una escritura
+   cuya respuesta se perdio), el "otro" fue este mismo -- se toma ese sello y se sigue,
+   sin cartel. Si es de verdad de otro equipo se corta y se avisa, y no se fusiona nada
+   (decision del 08/09/2026).                                                        */
+function revisarRechazo(lug, obj, envio, yo){
+  leerServidor(lug, function(err, res, sello){
+    if(err) return falloEscritura(lug, envio, "error");    // no se pudo mirar: se reintenta despues
+    // (si hay varias iguales, la mas vieja: es la que llego primero)
+    var fila = res ? canon(normalizar(res)) : null, mio = null;
+    (inciertos[lug] || []).forEach(function(m){ if(m.txt === fila && !mio) mio = m; });
+    // o algo que dejo en vuelo esta misma boca antes de recargar la pagina
+    if(!mio && fila !== null && (vueloDe[lug] || []).indexOf(huella(fila)) >= 0)
+      mio = {txt: fila, envio: null};
+    guardando = false;
+    if(mio){
+      sellos[lug] = sello; inciertos[lug] = [];
+      tomarVersion(lug, obj.estado, fila);
+      if(mio.envio && mio !== yo){
+        // un envio anterior SI llego (el mail ya salio): no se manda dos veces
+        if(envio){ cerrarEnvio(envio, "ya", mio.envio); envio = null; }
+        else {
+          cerrarEnvio(mio.envio, "ya");
+          alert("✓ El pedido de " + nomLugar(lug) + " de " + nomMes(mio.envio.mes) +
+                " sí había llegado a Administración, aunque el equipo no se enteró.\n\n" +
+                "No hace falta mandarlo de nuevo.");
+        }
+      }
+      if(!envio && canon(obj.estado) === fila){ estado("ok"); return terminoEscritura(); }
+      return postear(lug, obj, envio);       // de nuevo, ahora con el sello bueno
+    }
+    if(pendiente && pendiente.lugar === lug) pendiente = null;
+    delete sinSubir[lug];                    // un conflicto de verdad no se reintenta
+    if(lug === lugar){ confirmado = false; conflictoAbierto = true; estado("conflicto"); }
+    if(envio) cerrarEnvio(envio, "conflicto");
+    else alert("⚠ Otro equipo guardó el pedido de " + nomLugar(lug) + " mientras cargabas " +
+               "(otra persona, u otro celu o pestaña tuya).\n\n" +
+               "Para no pisarle lo que hizo, esto NO se guardó.\n\n" +
+               "Recargá la página y volvé a poner lo que falte.");
+    terminoEscritura();
+  });
+}
+
+/* Termino una escritura. Sigue la cola: lo pendiente, despues lo que esperaba la cola
+   vacia (un envio) y al final una lectura que se demoro para no leer una foto vieja. */
+function terminoEscritura(){
+  guardando = false;
+  if(pendiente){
+    var p = pendiente; pendiente = null;
+    // si lo encolado ya quedo arriba (un reintento lo llevo), no se reescribe
+    if(!(p.lugar === lugar && p.obj.estado === E && canon(E) === baseTxt)) return postear(p.lugar, p.obj);
+  }
+  // de a uno: si el que sale escribe, los que siguen esperan a que termine
+  while(!guardando && !pendiente && alVaciarCola.length) alVaciarCola.shift()();
+  if(!guardando && !pendiente && leerAlVaciar){ leerAlVaciar = false; releer(); }
+}
+function alVaciar(fn){
+  if(!guardando && !pendiente && !alVaciarCola.length) return fn();
+  alVaciarCola.push(fn);
+}
+
+/* Despues de una falla se reintenta solo cada 15 s mientras haga falta: primero lo que
+   quedo sin subir de una boca que se dejo (de a una), despues la boca que se ve: sin
+   leer la fila, se relee; con cambios sin subir, se suben.                         */
+function programarReintento(){
+  if(tReintento) return;
+  tReintento = setTimeout(function(){
+    tReintento = null;
+    if(guardando || pendiente){ if(Object.keys(sinSubir).length) programarReintento(); return; }
+    var otra = Object.keys(sinSubir).filter(function(l){ return l !== lugar; })[0];
+    if(otra){
+      delete sinSubir[otra];
+      if(estadoDe[otra] && huella(canon(estadoDe[otra])) !== huellaDe[otra]){
+        programarReintento();                  // la que se ve, en la vuelta siguiente
+        return postear(otra, {lugar: otra, estado: estadoDe[otra]});
+      }
+    }
+    if(conflictoAbierto) return;
+    if(!confirmado) return releer();
+    if(canon(E) !== baseTxt) subir();
+  }, 15000);
+}
+
+/* Lee la fila de esta boca y se la pasa a aplicarLectura(). La usan cargar(), el
+   listener de visibilitychange y el reintento. Una lectura que vuelve cuando ya se
+   cambio de boca, o cuando ya se pidio otra mas nueva, se descarta: es la guarda que
+   frena lo que metio los 17 meses del Deposito en Balcarce y Administracion.        */
+function releer(){
+  var id = lugar, n = ++nLectura, esc = nEscritura;
+  leerServidor(id, function(err, res, sello){
+    if(id !== lugar || n !== nLectura) return;
+    if(err){
+      if(!confirmado && !conflictoAbierto){
+        modoLocal("No se pudo leer la planilla. Podés contar: queda guardado en este equipo y " +
+                  "<b>se sube solo cuando vuelva internet</b> (si mientras tanto otro equipo cambió " +
+                  "este pedido, te avisa).");
+        estado("error");
+        programarReintento();
+      }
       return;
     }
-    if(r && r.actualizado) baseTs = String(r.actualizado);
+    aplicarLectura(res, sello, esc);
+  });
+}
+
+/* Que hacer con una lectura de la fila (ver la cabecera de esta seccion).          */
+function aplicarLectura(res, sello, escAlPedir){
+  if(res) normalizar(res);
+  var eTxt = canon(E), rTxt = res ? canon(res) : null;
+  if(!confirmado){
+    // Primera lectura buena de esta boca: al abrir, al cambiar de boca o despues de un corte.
+    // Lo que hay en pantalla esta parado sobre una version de la planilla (baseHuella /
+    // selloCargado): si E sigue igual a esa version, aca no hay nada sin subir.
+    if(conflictoAbierto) return;
+    var limpio = huella(eTxt) === baseHuella;
+    // la planilla sigue en esa version, o tiene algo que mando este equipo (antes de recargar,
+    // o desde esta misma pagina antes de cambiar de boca)
+    var igual = res && (huella(rTxt) === baseHuella || (selloCargado !== null && sello === selloCargado) ||
+                        (vueloDe[lugar] || []).indexOf(huella(rTxt)) >= 0 ||
+                        (inciertos[lugar] || []).some(function(m){ return m.txt === rTxt; }));
+    confirmado = true;
+    var av = document.getElementById("avisoLocal");
+    if(av) av.style.display = "none";
+    sellos[lugar] = sello;
+    if(!res){ ponerBase(null); guardarLocal(); return subir(); }   // la planilla no tenia nada: subimos lo nuestro
+    if(rTxt === eTxt || limpio){                       // igual, o aca no hay nada sin subir: manda la planilla
+      ponerEstado(res, rTxt);
+      return estado("ok");
+    }
+    if(igual){                                         // hay cosas sin subir y la planilla no cambio desde
+      ponerBase(rTxt); guardarLocal();                 // entonces: van para arriba (lo tipeado mientras
+      return subir();                                  // cargaba, o lo que quedo de antes de recargar)
+    }
+    // Hay cosas sin subir, pero la planilla cambio (otro equipo): no se fusiona, se avisa.
+    // Antes se perdian sin aviso y el pie decia "✓ guardado".
+    ponerEstado(res, rTxt);
     estado("ok");
-    if(pendiente){ var p = pendiente; pendiente = null; postear(p.lugar, p.obj); }
-  };
-  x.onerror = x.ontimeout = function(){ guardando = false; estado("error"); };
-  x.send(cuerpo);
+    return alert("⚠ Había cosas cargadas en este equipo que no llegaron a la planilla de " +
+                 nomLugar(lugar) + ", y mientras tanto otro equipo cambió el pedido.\n\n" +
+                 "Para no pisarle lo que hizo, quedó lo de la planilla. Fijate y volvé a poner lo que falte.");
+  }
+  // Relectura con la fila ya confirmada (volver a la pantalla, reintento)
+  if(nEscritura !== escAlPedir || guardando || pendiente || tDebounce) return;  // se escribio: foto vieja
+  if(!res || eTxt !== baseTxt) return;    // hay cambios de aca sin subir: no se pisan (los sube la cola)
+  if(sello === sellos[lugar]) return;     // nada nuevo
+  sellos[lugar] = sello;
+  ponerEstado(res, rTxt);
+  estado("recargado");
+}
+
+/* E pasa a ser lo que tiene la planilla. Si la persona no eligio un mes a mano, queda
+   parada en el ULTIMO (ver `mesElegido`).                                          */
+function ponerEstado(res, rTxt){
+  ponerBase(rTxt);
+  var cambia = rTxt !== canon(E);
+  if(cambia){ E = res; estadoDe[lugar] = E; }
+  guardarLocal();
+  var mes = mesAct;
+  if(!mesElegido || E.meses.indexOf(mesAct) < 0){ mes = E.meses[E.meses.length - 1]; mesElegido = false; }
+  if(!cambia && mes === mesAct) return;
+  mesAct = mes;
+  pintarMeses(); pintar(); pintarHist();
 }
 
 
@@ -1815,33 +2182,19 @@ function leerServidor(id, cb){
   x.send();
 }
 
-/* Al volver a esta pantalla se relee el servidor, por si se cargó desde otro
-   dispositivo. Seguro: lo de acá ya se guardó al tipear.                        */
+/* Al volver a esta pantalla: si quedo algo sin subir, se sube; si no, se relee la fila
+   por si se cargo desde otro dispositivo. Que hacer con lo que llega lo decide
+   aplicarLectura(): una foto que pudo quedar vieja no pisa nada.                  */
 document.addEventListener("visibilitychange", function(){
   if(!EN_LINEA) return;
   if(document.visibilityState === "hidden"){
     if(tDebounce){ clearTimeout(tDebounce); tDebounce = null; subir(); }
     return;
   }
-  if(guardando || pendiente) return;
-  if(!E) return;                        // todavia no se entro (porton): no hay nada que refrescar
-  // MISMA GUARDA QUE cargar(): sin esto, el estado de la boca vieja aterrizaba en E y el
-  // primer tecleo lo subia a la fila de la boca nueva. Es lo que metio los 17 meses del
-  // Deposito en Balcarce y Administracion.
-  var idPedido = lugar;
-  leerServidor(idPedido, function(err, res, sello){
-    if(idPedido !== lugar) return;       // cambio de boca mientras leia
-    if(err) return;
-    // El sello se guarda aunque el contenido sea igual: si otro dispositivo escribio
-    // lo mismo, la version cambio y sin esto la proxima escritura chocaria de gusto.
-    if(sello) baseTs = sello;
-    if(!res) return;
-    if(JSON.stringify(res) === JSON.stringify(E)) return;
-    E = res;
-    if(E.meses.indexOf(mesAct) < 0) mesAct = E.meses[E.meses.length-1];
-    pintarMeses(); pintar(); pintarHist();
-    estado("recargado");
-  });
+  if(!E || conflictoAbierto) return;    // todavia no se entro (porton), o hay que recargar
+  if(guardando || pendiente) return;    // con escrituras en vuelo la foto podria ser vieja
+  if(confirmado && canon(E) !== baseTxt){ subir(); return; }
+  releer();
 });
 
 /* Indicador discreto de guardado, en el pie */
@@ -1852,8 +2205,9 @@ function estado(s){
   if(s === "cargando"){ e.textContent = "cargando…"; e.style.color = "#9ca3af"; }
   if(s === "ok"){ e.textContent = "✓ guardado"; e.style.color = "#0F7A3D"; }
   if(s === "error"){ e.textContent = "⚠ sin conexión — guardado en este equipo"; e.style.color = "#b45309"; }
+  if(s === "rechazado"){ e.textContent = "⚠ la planilla no lo tomó — se reintenta"; e.style.color = "#b45309"; }
   if(s === "recargado"){ e.textContent = "↻ actualizado"; e.style.color = "#0F7A3D"; }
-  if(s === "conflicto"){ e.textContent = "⚠ otro guardó — recargá"; e.style.color = "var(--rojo)"; }
+  if(s === "conflicto"){ e.textContent = "⚠ otro equipo guardó — recargá"; e.style.color = "var(--rojo)"; }
   if(s === "sinconfirmar"){ e.textContent = "⚠ NO se guarda en la planilla"; e.style.color = "var(--rojo)"; }
 }
 </script>
